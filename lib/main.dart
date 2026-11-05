@@ -50,13 +50,16 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
   void initState() {
     super.initState();
     
-    // Catch the real ExoPlayer error if it happens
-    _player.errorStream.listen((error) {
-      setState(() {
-        _errorMessage = "Playback Error: ${error.toString()}";
-        _isLoading = false;
-      });
-    });
+    // Correct error handling for just_audio 0.9.46
+    _player.playbackEventStream.listen(
+      (event) {},
+      onError: (Object error, StackTrace stackTrace) {
+        setState(() {
+          _errorMessage = "Playback Error: ${error.toString()}";
+          _isLoading = false;
+        });
+      },
+    );
   }
 
   @override
@@ -72,7 +75,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
     });
 
     try {
-      // IMPORTANT: You MUST wrap the URI in a MediaItem for background audio
+      // IMPORTANT: Wrapping the URI in a MediaItem for background audio
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(url),
@@ -80,7 +83,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
             id: title, 
             title: title,
             artist: frequency,
-            artUri: Uri.parse('https://via.placeholder.com/300'), // Replace with your logo
+            artUri: Uri.parse('https://via.placeholder.com/300'), // Replace with your logo URL
           ),
         ),
       );
