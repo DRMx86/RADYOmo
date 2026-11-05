@@ -29,7 +29,6 @@ class Station {
 const stations = <Station>[
   Station('Monster Radio', 'RX 93.1',
       'https://in-icecast.eradioportal.com:8443/monsterrrx', Color(0xFFE53935)),
-  // ".m3u" removed: the player needs the raw stream, not a playlist file.
   Station('Win Radio', '91.5', 'https://stream.zeno.fm/2ss1hgnu6hhvv',
       Color(0xFF1E88E5)),
   Station('Magic', '89.9', 'https://stream-161.zeno.fm/sh37pvfd938uv',
@@ -59,24 +58,57 @@ class PlayerPage extends StatefulWidget {
 class _PlayerPageState extends State<PlayerPage> {
   late final AudioPlayer _player;
   int _index = 0;
-  int _dir = 1; // slide direction for station change
-  bool _showList = true; // station selection visible on launch
+  int _dir = 1; 
+  bool _showList = true; 
+  double _volume = 1.0;
 
   @override
   void initState() {
     super.initState();
-    // Added userAgent so the radio servers don't block the app
     _player = AudioPlayer(
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     );
 
-    // Added error listener for just_audio 0.9.46 without breaking your UI
+    // Setup the player with a playlist so notification has Skip buttons
+    _setupAudioSources();
+
+    // Listen to notification/lock screen controls to update UI
+    _player.currentIndexStream.listen((index) {
+      if (index != null && index != _index) {
+        setState(() {
+          _dir = index > _index ? 1 : -1;
+          _index = index;
+        });
+      }
+    });
+
+    // Error listener
     _player.playbackEventStream.listen(
       (event) {},
       onError: (Object error, StackTrace stackTrace) {
         _snack('Playback error. Check your connection.');
       },
     );
+  }
+
+  Future<void> _setupAudioSources() async {
+    try {
+      final sources = stations
+          .map((s) => AudioSource.uri(
+                Uri.parse(s.url),
+                tag: MediaItem(
+                  id: s.url,
+                  title: s.name,
+                  artist: s.freq,
+                  album: 'Live Radio',
+                ),
+              ))
+          .toList();
+
+      await _player.setAudioSources(sources, initialIndex: _index);
+    } catch (_) {
+      _snack('Unable to initialize stations.');
+    }
   }
 
   @override
@@ -90,24 +122,14 @@ class _PlayerPageState extends State<PlayerPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
-  Future<void> _load(int i) async {
-    final s = stations[i];
-    try {
-      await _player.setAudioSource(AudioSource.uri(
-        Uri.parse(s.url),
-        tag: MediaItem(id: s.url, title: s.name, artist: s.freq, album: 'Live Radio'),
-      ));
-      _player.play();
-    } catch (_) {
-      _snack('Unable to play this station. Check your connection.');
-    }
-  }
-
   Future<void> _toggle() async {
     if (_player.playing) {
-      await _player.stop(); // live stream: resume returns to live
+      await _player.pause();
     } else {
-      await _load(_index);
+      if (_player.audioSource == null) {
+        await _setupAudioSources();
+      }
+      _player.play();
     }
   }
 
@@ -117,7 +139,10 @@ class _PlayerPageState extends State<PlayerPage> {
       _index = i;
       if (fromList) _showList = false;
     });
-    if (fromList || _player.playing) _load(i);
+    
+    // Seek to the new station in the playlist
+    _player.seek(Duration.zero, index: i);
+    if (!_player.playing) _player.play();
   }
 
   void _onSwipe(DragEndDetails d) {
@@ -126,13 +151,64 @@ class _PlayerPageState extends State<PlayerPage> {
     if (v > 300 && _index > 0) _select(_index - 1);
   }
 
+  // --- UI COMPONENTS ---
+
+  Widget _buildVolumeSlider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.volume_down, color: Colors.white54, size: 20),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                activeTrackColor: Colors.white,
+                inactiveTrackColor: Colors.white24,
+                thumbColor: Colors.white,
+              ),
+              child: Slider(
+                value: _volume,
+                onChanged: (v) {
+                  setState(() => _volume = v);
+                  _player.setVolume(v);
+                },
+              ),
+            ),
+          ),
+          const Icon(Icons.volume_up, color: Colors.white54, size: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlayButton() {
+    return StreamBuilder<PlayerState>(
+      stream: _player.playerStateStream,
+      builder: (context, snap) {
+        final s = snap.data;
+        final loading = s?.processingState == ProcessingState.loading ||
+            s?.processingState == ProcessingState.buffering;
+        return _PlayButton(
+          playing: s?.playing ?? false,
+          busy: loading,
+          onTap: _toggle,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final st = stations[_index];
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Scaffold(
       body: Stack(
         children: [
-          // ---------- PLAYER ----------
+          // ---------- BACKGROUND GRADIENT ----------
           AnimatedContainer(
             duration: const Duration(milliseconds: 500),
             decoration: BoxDecoration(
@@ -143,89 +219,46 @@ class _PlayerPageState extends State<PlayerPage> {
                 stops: const [0, 0.7],
               ),
             ),
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 48),
-                        const Expanded(
-                          child: Center(
-                            child: Text('LIVE RADIO',
-                                style: TextStyle(
-                                    letterSpacing: 3,
-                                    fontSize: 12,
-                                    color: Colors.white70)),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.queue_music_rounded),
-                          onPressed: () => setState(() => _showList = true),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onHorizontalDragEnd: _onSwipe,
-                      child: Center(
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 350),
-                          transitionBuilder: (child, anim) {
-                            final incoming = child.key == ValueKey(_index);
-                            final begin = Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
-                            return SlideTransition(
-                              position: Tween<Offset>(begin: begin, end: Offset.zero)
-                                  .animate(anim),
-                              child: FadeTransition(opacity: anim, child: child),
-                            );
-                          },
-                          child: _StationCard(key: ValueKey(_index), station: st),
+          ),
+          
+          // ---------- MAIN PLAYER LAYOUT ----------
+          SafeArea(
+            child: Column(
+              children: [
+                // Top Bar
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 48),
+                      const Expanded(
+                        child: Center(
+                          child: Text('LIVE RADIO',
+                              style: TextStyle(
+                                  letterSpacing: 3,
+                                  fontSize: 12,
+                                  color: Colors.white70)),
                         ),
                       ),
-                    ),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      stations.length,
-                      (i) => AnimatedContainer(
-                        duration: const Duration(milliseconds: 250),
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: i == _index ? 20 : 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: i == _index ? Colors.white : Colors.white30,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.queue_music_rounded),
+                        onPressed: () => setState(() => _showList = true),
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 28),
-                  StreamBuilder<PlayerState>(
-                    stream: _player.playerStateStream,
-                    builder: (context, snap) {
-                      final s = snap.data;
-                      final loading =
-                          s?.processingState == ProcessingState.loading ||
-                              s?.processingState == ProcessingState.buffering;
-                      return _PlayButton(
-                        playing: s?.playing ?? false,
-                        busy: loading,
-                        onTap: _toggle,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 48),
-                ],
-              ),
+                ),
+                
+                // Responsive Body
+                Expanded(
+                  child: isLandscape 
+                      ? _buildLandscapeLayout(st) 
+                      : _buildPortraitLayout(st),
+                ),
+              ],
             ),
           ),
 
-          // ---------- STATION SELECTION (slides in / out) ----------
+          // ---------- STATION SELECTION SLIDE-UP ----------
           Positioned.fill(
             child: IgnorePointer(
               ignoring: !_showList,
@@ -260,11 +293,10 @@ class _PlayerPageState extends State<PlayerPage> {
                               ),
                             ),
                           ),
-                          if (_player.playing || _index >= 0 && _player.processingState != ProcessingState.idle)
-                            TextButton(
-                              onPressed: () => setState(() => _showList = false),
-                              child: const Text('Back to player'),
-                            ),
+                          TextButton(
+                            onPressed: () => setState(() => _showList = false),
+                            child: const Text('Back to player'),
+                          ),
                         ],
                       ),
                     ),
@@ -274,6 +306,109 @@ class _PlayerPageState extends State<PlayerPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Portrait Layout: Card -> Dots -> Volume -> Play Button
+  Widget _buildPortraitLayout(Station st) {
+    return Column(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragEnd: _onSwipe,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, anim) {
+                  final incoming = child.key == ValueKey(_index);
+                  final begin = Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                  return SlideTransition(
+                    position: Tween<Offset>(begin: begin, end: Offset.zero).animate(anim),
+                    child: FadeTransition(opacity: anim, child: child),
+                  );
+                },
+                child: _StationCard(key: ValueKey(_index), station: st),
+              ),
+            ),
+          ),
+        ),
+        _buildDots(),
+        const SizedBox(height: 16),
+        _buildVolumeSlider(),
+        const SizedBox(height: 16),
+        _buildPlayButton(),
+        const SizedBox(height: 48),
+      ],
+    );
+  }
+
+  // Landscape Layout: Row [ Card ] [ Dots -> Volume -> Play Button ]
+  Widget _buildLandscapeLayout(Station st) {
+    return Row(
+      children: [
+        // Left side: Card
+        Expanded(
+          flex: 5,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragEnd: _onSwipe,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, anim) {
+                  final incoming = child.key == ValueKey(_index);
+                  final begin = Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                  return SlideTransition(
+                    position: Tween<Offset>(begin: begin, end: Offset.zero).animate(anim),
+                    child: FadeTransition(opacity: anim, child: child),
+                  );
+                },
+                // Smaller card size for landscape
+                child: _StationCard(
+                  key: ValueKey(_index), 
+                  station: st,
+                  isLandscape: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+        
+        // Right side: Controls
+        Expanded(
+          flex: 5,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildDots(),
+              const SizedBox(height: 24),
+              _buildVolumeSlider(),
+              const SizedBox(height: 24),
+              _buildPlayButton(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        stations.length,
+        (i) => AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: i == _index ? 20 : 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: i == _index ? Colors.white : Colors.white30,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
       ),
     );
   }
@@ -312,12 +447,10 @@ class _StationTile extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // SWAPPED: Name is now on top with the larger font
                     Text(station.name,
                         style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 2),
-                    // SWAPPED: Frequency is now on the bottom
                     Text(station.freq,
                         style: const TextStyle(
                             fontSize: 16, color: Colors.white70)),
@@ -336,14 +469,26 @@ class _StationTile extends StatelessWidget {
 
 class _StationCard extends StatelessWidget {
   final Station station;
-  const _StationCard({super.key, required this.station});
+  final bool isLandscape;
+  
+  const _StationCard({
+    super.key, 
+    required this.station,
+    this.isLandscape = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width * 0.78;
+    // Responsive sizing based on orientation
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    final w = isLandscape ? screenHeight * 0.6 : screenWidth * 0.78;
+    final h = isLandscape ? screenHeight * 0.7 : w * 1.2;
+
     return Container(
       width: w,
-      height: w * 1.2,
+      height: h,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
@@ -363,16 +508,20 @@ class _StationCard extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.radio, size: 56, color: Colors.white70),
-          const SizedBox(height: 20),
-          // SWAPPED: Name is now on top with the larger font
+          Icon(Icons.radio, size: isLandscape ? 40 : 56, color: Colors.white70),
+          SizedBox(height: isLandscape ? 12 : 20),
           Text(station.name,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800)),
+              style: TextStyle(
+                fontSize: isLandscape ? 28 : 34, 
+                fontWeight: FontWeight.w800,
+              )),
           const SizedBox(height: 8),
-          // SWAPPED: Frequency is now on the bottom
           Text(station.freq,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
+              style: TextStyle(
+                fontSize: isLandscape ? 16 : 20, 
+                fontWeight: FontWeight.w500,
+              )),
         ],
       ),
     );
