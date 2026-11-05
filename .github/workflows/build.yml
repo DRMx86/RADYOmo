@@ -23,7 +23,7 @@ jobs:
 
       # Generates the android/ folder (not stored in the repo)
       - name: Generate platform folders
-        run: flutter create --platforms=android --org com.radyomo --project-name RADYOmo .
+        run: flutter create --platforms=android --org com.radyomo --project-name radyomo .
 
       - name: Patch AndroidManifest for background audio
         run: python3 tool/patch_android.py
