@@ -11,7 +11,11 @@ def patch_manifest():
 
     content = manifest_path.read_text()
 
-    # 1. Add all required permissions safely BEFORE the <application> tag
+    # 1. Change the app name (Display label on the home screen)
+    # Change 'RADYOmo' to whatever you want the app to be called.
+    content = re.sub(r'android:label="[^"]*"', 'android:label="RADYOmo"', content)
+
+    # 2. Add all required permissions safely BEFORE the <application> tag
     permissions = """
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -23,9 +27,8 @@ def patch_manifest():
     if 'android.permission.WAKE_LOCK' not in content:
         content = content.replace('<application', permissions + '\n    <application', 1)
 
-    # 2. Safely add usesCleartextTraffic attribute to the <application> tag
+    # 3. Safely add usesCleartextTraffic attribute to the <application> tag
     if 'android:usesCleartextTraffic="true"' not in content:
-        # Look for <application followed by a space and inject the attribute
         content = re.sub(
             r'(<application\s+)',
             r'\1android:usesCleartextTraffic="true"\n        ',
@@ -33,7 +36,7 @@ def patch_manifest():
             count=1
         )
 
-    # 3. Add AudioService and Receiver before the closing </application> tag
+    # 4. Add AudioService and Receiver before the closing </application> tag
     audio_service_xml = """
     <service
         android:name="com.ryanheise.audioservice.AudioService"
