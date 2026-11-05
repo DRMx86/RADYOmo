@@ -2,9 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:volume_controller/volume_controller.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Request notification permission for Android 13+
+  await Permission.notification.request();
+
   try {
     await JustAudioBackground.init(
       androidNotificationChannelId: 'com.phradio.channel.audio',
@@ -69,8 +75,8 @@ class _PlayerPageState extends State<PlayerPage> {
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     );
 
-    // Setup the player with a playlist
     _setupAudioSources();
+    _setupVolumeListener();
 
     // Listen to notification/lock screen controls to update UI
     _player.currentIndexStream.listen((index) {
@@ -82,7 +88,6 @@ class _PlayerPageState extends State<PlayerPage> {
       }
     });
 
-    // Error listener
     _player.playbackEventStream.listen(
       (event) {},
       onError: (Object error, StackTrace stackTrace) {
@@ -91,9 +96,18 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
+  // Syncs physical volume buttons with the slider
+  void _setupVolumeListener() async {
+    _volume = await VolumeController.instance.getVolume();
+    VolumeController.instance.addListener((volume) {
+      if (mounted) {
+        setState(() => _volume = volume);
+      }
+    });
+  }
+
   Future<void> _setupAudioSources() async {
     try {
-      // FIXED: Using ConcatenatingAudioSource for just_audio 0.9.46
       final playlist = ConcatenatingAudioSource(
         children: stations
             .map((s) => AudioSource.uri(
@@ -116,6 +130,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    VolumeController.instance.removeListener();
     _player.dispose();
     super.dispose();
   }
@@ -175,7 +190,8 @@ class _PlayerPageState extends State<PlayerPage> {
                 value: _volume,
                 onChanged: (v) {
                   setState(() => _volume = v);
-                  _player.setVolume(v);
+                  // Controls physical system volume instead of just app volume
+                  VolumeController.instance.setVolume(v);
                 },
               ),
             ),
@@ -186,7 +202,6 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  // Combined controls with Previous, Play/Pause, Next
   Widget _buildControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -229,7 +244,6 @@ class _PlayerPageState extends State<PlayerPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // ---------- BACKGROUND GRADIENT ----------
           AnimatedContainer(
             duration: const Duration(milliseconds: 500),
             decoration: BoxDecoration(
@@ -241,12 +255,9 @@ class _PlayerPageState extends State<PlayerPage> {
               ),
             ),
           ),
-
-          // ---------- MAIN PLAYER LAYOUT ----------
           SafeArea(
             child: Column(
               children: [
-                // Top Bar
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                   child: Row(
@@ -268,8 +279,6 @@ class _PlayerPageState extends State<PlayerPage> {
                     ],
                   ),
                 ),
-
-                // Responsive Body
                 Expanded(
                   child: isLandscape
                       ? _buildLandscapeLayout(st)
@@ -278,8 +287,6 @@ class _PlayerPageState extends State<PlayerPage> {
               ],
             ),
           ),
-
-          // ---------- STATION SELECTION SLIDE-UP ----------
           Positioned.fill(
             child: IgnorePointer(
               ignoring: !_showList,
@@ -333,7 +340,6 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  // Portrait Layout: Card -> Dots -> Volume -> Controls
   Widget _buildPortraitLayout(Station st) {
     return Column(
       children: [
@@ -370,40 +376,42 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  // Landscape Layout: Row [ Card ] [ Dots -> Volume -> Controls ]
   Widget _buildLandscapeLayout(Station st) {
     return Row(
       children: [
-        // Left side: Card
+        // Left side: Card aligned to center-left
         Expanded(
           flex: 5,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragEnd: _onSwipe,
-            child: Center(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 350),
-                transitionBuilder: (child, anim) {
-                  final incoming = child.key == ValueKey(_index);
-                  final begin =
-                      Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
-                  return SlideTransition(
-                    position:
-                        Tween<Offset>(begin: begin, end: Offset.zero)
-                            .animate(anim),
-                    child: FadeTransition(opacity: anim, child: child),
-                  );
-                },
-                child: _StationCard(
-                  key: ValueKey(_index),
-                  station: st,
-                  isLandscape: true,
+          child: Align(
+            alignment: Alignment.centerLeft, 
+            child: Padding(
+              padding: const EdgeInsets.only(left: 40.0), // "Not too left"
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragEnd: _onSwipe,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, anim) {
+                    final incoming = child.key == ValueKey(_index);
+                    final begin =
+                        Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                    return SlideTransition(
+                      position:
+                          Tween<Offset>(begin: begin, end: Offset.zero)
+                              .animate(anim),
+                      child: FadeTransition(opacity: anim, child: child),
+                    );
+                  },
+                  child: _StationCard(
+                    key: ValueKey(_index),
+                    station: st,
+                    isLandscape: true,
+                  ),
                 ),
               ),
             ),
           ),
         ),
-
         // Right side: Controls
         Expanded(
           flex: 5,
