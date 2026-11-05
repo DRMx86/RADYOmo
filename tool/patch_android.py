@@ -11,11 +11,14 @@ def patch_manifest():
 
     content = manifest_path.read_text()
 
-    # 1. Add required permissions
+    # 1. Add ALL required permissions (including network ones)
     permissions_to_add = [
         '<uses-permission android:name="android.permission.WAKE_LOCK"/>',
         '<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>',
-        '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>'
+        '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>',
+        '<uses-permission android:name="android.permission.INTERNET"/>', # For network audio streaming
+        '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>', # Recommended
+        '<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>' # Required for the local media server
     ]
     
     for perm in permissions_to_add:
@@ -47,25 +50,13 @@ def patch_manifest():
     if 'com.ryanheise.audioservice.AudioService' not in content:
         content = content.replace('</application>', audio_service_xml + '\n</application>')
 
-    # 3. Ensure the MainActivity is referenced correctly in the manifest
-    if 'com.ryanheise.audioservice.AudioServiceActivity' in content:
-        # If the manifest already points to AudioServiceActivity, we can leave it.
-        # The MainActivity.kt patch will handle the engine provision.
-        pass
-    else:
-        # If the manifest still points to a custom activity (e.g., .MainActivity),
-        # we leave it as is; the MainActivity.kt patch will make it extend AudioServiceActivity.
-        pass
-
     manifest_path.write_text(content)
     print("Successfully patched AndroidManifest.xml")
 
 def patch_main_activity():
     # Find the MainActivity.kt file (path may vary based on package name)
-    # Common path: android/app/src/main/kotlin/com/example/radyomo/MainActivity.kt
     main_activity_paths = list(pathlib.Path("android").rglob("MainActivity.kt"))
     if not main_activity_paths:
-        # Try .java as a fallback
         main_activity_paths = list(pathlib.Path("android").rglob("MainActivity.java"))
 
     if not main_activity_paths:
@@ -79,24 +70,14 @@ def patch_main_activity():
         # 1. Add the import for AudioServiceActivity
         import_statement = "import com.ryanheise.audioservice.AudioServiceActivity"
         if import_statement not in content:
-            # Insert the import after the package declaration
             content = re.sub(r'(package\s+[^\n]+\n)', r'\1\n' + import_statement + '\n', content, count=1)
 
         # 2. Change the superclass from FlutterActivity to AudioServiceActivity
-        # Kotlin syntax: class MainActivity: FlutterActivity() { ... }
         content = re.sub(
             r'class\s+MainActivity\s*:\s*FlutterActivity\s*\(\s*\)',
             'class MainActivity: AudioServiceActivity()',
             content
         )
-
-        # 3. If the class extends FlutterFragmentActivity, use AudioServiceFragmentActivity
-        # (Uncomment the following block if your app uses fragments)
-        # content = re.sub(
-        #     r'class\s+MainActivity\s*:\s*FlutterFragmentActivity\s*\(\s*\)',
-        #     'class MainActivity: AudioServiceFragmentActivity()',
-        #     content
-        # )
 
         if content != original_content:
             activity_path.write_text(content)
