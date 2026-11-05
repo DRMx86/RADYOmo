@@ -14,7 +14,15 @@ Future<void> main() async {
   } catch (_) {
     // App still opens even if background service fails to start.
   }
-  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
+  // Full screen: hide the navigation bar (and status bar). Swiping from the
+  // screen edge shows them briefly, then they hide again.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
   runApp(const RadioApp());
 }
 
@@ -66,6 +74,10 @@ class _PlayerPageState extends State<PlayerPage> {
   void initState() {
     super.initState();
     _player = AudioPlayer();
+    // Surface playback errors (403, TLS, bad format) that happen after loading.
+    _player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
+      _snack('Playback error: $e');
+    });
   }
 
   @override
@@ -84,11 +96,15 @@ class _PlayerPageState extends State<PlayerPage> {
     try {
       await _player.setAudioSource(AudioSource.uri(
         Uri.parse(s.url),
+        headers: const {
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36',
+        },
         tag: MediaItem(id: s.url, title: s.name, artist: s.freq, album: 'Live Radio'),
       ));
-      _player.play();
-    } catch (_) {
-      _snack('Unable to play this station. Check your connection.');
+      await _player.play();
+    } catch (e) {
+      _snack('Error: $e');
     }
   }
 
@@ -301,11 +317,13 @@ class _StationTile extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(station.freq,
-                        style: const TextStyle(
-                            fontSize: 30, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
                     Text(station.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 28, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    Text(station.freq,
                         style: const TextStyle(
                             fontSize: 16, color: Colors.white70)),
                   ],
@@ -352,11 +370,12 @@ class _StationCard extends StatelessWidget {
         children: [
           const Icon(Icons.radio, size: 56, color: Colors.white70),
           const SizedBox(height: 20),
-          Text(station.freq,
-              style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
           Text(station.name,
               textAlign: TextAlign.center,
+              maxLines: 2,
+              style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(station.freq,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
         ],
       ),
