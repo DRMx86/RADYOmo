@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
+String? audioInitError;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
@@ -11,8 +13,10 @@ Future<void> main() async {
       androidNotificationChannelName: 'Radio playback',
       androidNotificationOngoing: true,
     );
-  } catch (_) {
-    // App still opens even if background service fails to start.
+  } catch (e) {
+    // App still opens even if background service fails to start,
+    // but remember why so playback errors can show it.
+    audioInitError = '$e';
   }
   // Full screen: hide the navigation bar (and status bar). Swiping from the
   // screen edge shows them briefly, then they hide again.
@@ -104,7 +108,9 @@ class _PlayerPageState extends State<PlayerPage> {
       ));
       await _player.play();
     } catch (e) {
-      _snack('Error: $e');
+      _snack(audioInitError != null
+          ? 'Audio service failed to start: $audioInitError'
+          : 'Error: $e');
     }
   }
 
