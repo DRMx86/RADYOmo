@@ -37,6 +37,10 @@ svc = """
 if "com.ryanheise.audioservice.AudioService" not in s:
     s = s.replace("</application>", svc + "    </application>", 1)
 
+if "EnableImpeller" not in s:
+    s = s.replace("</application>",
+        '        <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false"/>\n    </application>', 1)
+
 if "xmlns:tools" not in s:
     s = s.replace("<manifest ", '<manifest xmlns:tools="http://schemas.android.com/tools" ', 1)
 

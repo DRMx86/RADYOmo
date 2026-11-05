@@ -5,11 +5,15 @@ import 'package:just_audio_background/just_audio_background.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.phradio.channel.audio',
-    androidNotificationChannelName: 'Radio playback',
-    androidNotificationOngoing: true,
-  );
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.phradio.channel.audio',
+      androidNotificationChannelName: 'Radio playback',
+      androidNotificationOngoing: true,
+    );
+  } catch (_) {
+    // App still opens even if background service fails to start.
+  }
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
   runApp(const RadioApp());
 }
@@ -25,11 +29,11 @@ class Station {
 const stations = <Station>[
   Station('Monster Radio', 'RX 93.1',
       'https://in-icecast.eradioportal.com:8443/monsterrrx', Color(0xFFE53935)),
-  // NOTE: ".m3u" removed - the player needs the raw stream, not a playlist file.
-  Station('Win Radio', '91.5',
-      'https://stream.zeno.fm/2ss1hgnu6hhvv', Color(0xFF1E88E5)),
-  Station('Magic', '89.9',
-      'https://stream-161.zeno.fm/sh37pvfd938uv', Color(0xFFFB8C00)),
+  // ".m3u" removed: the player needs the raw stream, not a playlist file.
+  Station('Win Radio', '91.5', 'https://stream.zeno.fm/2ss1hgnu6hhvv',
+      Color(0xFF1E88E5)),
+  Station('Magic', '89.9', 'https://stream-161.zeno.fm/sh37pvfd938uv',
+      Color(0xFFFB8C00)),
 ];
 
 class RadioApp extends StatelessWidget {
@@ -38,7 +42,10 @@ class RadioApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         title: 'PH Radio',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData.dark(useMaterial3: true),
+        theme: ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: const Color(0xFF121212),
+        ),
         home: const PlayerPage(),
       );
 }
@@ -50,141 +57,262 @@ class PlayerPage extends StatefulWidget {
 }
 
 class _PlayerPageState extends State<PlayerPage> {
-  final _player = AudioPlayer();
-  final _pageController = PageController(viewportFraction: 0.78);
+  late final AudioPlayer _player;
   int _index = 0;
-  int? _loadedIndex;
+  int _dir = 1; // slide direction for station change
+  bool _showList = true; // station selection visible on launch
 
   @override
   void initState() {
     super.initState();
-    _player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to play this station. Check your connection.')),
-      );
-    });
+    _player = AudioPlayer();
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
     _player.dispose();
     super.dispose();
   }
 
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
   Future<void> _load(int i) async {
     final s = stations[i];
-    _loadedIndex = i;
     try {
       await _player.setAudioSource(AudioSource.uri(
         Uri.parse(s.url),
-        tag: MediaItem(
-          id: s.url,
-          title: s.name,
-          artist: s.freq,
-          album: 'Live Radio',
-        ),
+        tag: MediaItem(id: s.url, title: s.name, artist: s.freq, album: 'Live Radio'),
       ));
       _player.play();
     } catch (_) {
-      _loadedIndex = null;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to play this station.')),
-        );
-      }
+      _snack('Unable to play this station. Check your connection.');
     }
   }
 
   Future<void> _toggle() async {
     if (_player.playing) {
-      // Live stream: stop so resuming goes back to "live", not stale buffer.
-      await _player.stop();
-      _loadedIndex = null;
+      await _player.stop(); // live stream: resume returns to live
     } else {
       await _load(_index);
     }
   }
 
-  void _onPageChanged(int i) {
-    setState(() => _index = i);
-    if (_player.playing) _load(i); // keep playing on the new station
+  void _select(int i, {bool fromList = false}) {
+    setState(() {
+      _dir = i >= _index ? 1 : -1;
+      _index = i;
+      if (fromList) _showList = false;
+    });
+    if (fromList || _player.playing) _load(i);
+  }
+
+  void _onSwipe(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (v < -300 && _index < stations.length - 1) _select(_index + 1);
+    if (v > 300 && _index > 0) _select(_index - 1);
   }
 
   @override
   Widget build(BuildContext context) {
-    final station = stations[_index];
+    final st = stations[_index];
     return Scaffold(
-      body: AnimatedContainer(
-        duration: const Duration(milliseconds: 500),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [station.color.withOpacity(0.55), const Color(0xFF121212)],
-            stops: const [0.0, 0.7],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              const Text('LIVE RADIO',
-                  style: TextStyle(letterSpacing: 3, fontSize: 12, color: Colors.white70)),
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: stations.length,
-                  onPageChanged: _onPageChanged,
-                  itemBuilder: (context, i) => AnimatedBuilder(
-                    animation: _pageController,
-                    builder: (context, child) {
-                      double page = _index.toDouble();
-                      if (_pageController.hasClients &&
-                          _pageController.position.haveDimensions) {
-                        page = _pageController.page ?? page;
-                      }
-                      final t = (1 - (page - i).abs()).clamp(0.0, 1.0);
-                      return Center(
-                        child: Transform.scale(
-                          scale: 0.82 + 0.18 * t,
-                          child: Opacity(opacity: 0.45 + 0.55 * t, child: child),
+      body: Stack(
+        children: [
+          // ---------- PLAYER ----------
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [st.color.withOpacity(0.6), const Color(0xFF121212)],
+                stops: const [0, 0.7],
+              ),
+            ),
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 48),
+                        const Expanded(
+                          child: Center(
+                            child: Text('LIVE RADIO',
+                                style: TextStyle(
+                                    letterSpacing: 3,
+                                    fontSize: 12,
+                                    color: Colors.white70)),
+                          ),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.queue_music_rounded),
+                          onPressed: () => setState(() => _showList = true),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragEnd: _onSwipe,
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 350),
+                          transitionBuilder: (child, anim) {
+                            final incoming = child.key == ValueKey(_index);
+                            final begin = Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                            return SlideTransition(
+                              position: Tween<Offset>(begin: begin, end: Offset.zero)
+                                  .animate(anim),
+                              child: FadeTransition(opacity: anim, child: child),
+                            );
+                          },
+                          child: _StationCard(key: ValueKey(_index), station: st),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      stations.length,
+                      (i) => AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: i == _index ? 20 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: i == _index ? Colors.white : Colors.white30,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  StreamBuilder<PlayerState>(
+                    stream: _player.playerStateStream,
+                    builder: (context, snap) {
+                      final s = snap.data;
+                      final loading =
+                          s?.processingState == ProcessingState.loading ||
+                              s?.processingState == ProcessingState.buffering;
+                      return _PlayButton(
+                        playing: s?.playing ?? false,
+                        busy: loading,
+                        onTap: _toggle,
                       );
                     },
-                    child: _StationCard(station: stations[i]),
                   ),
-                ),
+                  const SizedBox(height: 48),
+                ],
               ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  stations.length,
-                  (i) => AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: i == _index ? 20 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: i == _index ? Colors.white : Colors.white30,
-                      borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+
+          // ---------- STATION SELECTION (slides in / out) ----------
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_showList,
+              child: AnimatedSlide(
+                offset: _showList ? Offset.zero : const Offset(0, 1),
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeOutCubic,
+                child: Container(
+                  color: const Color(0xFF121212),
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 28),
+                          const Text('Select Station',
+                              style: TextStyle(
+                                  fontSize: 28, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          const Text('Choose a radio station to start listening',
+                              style: TextStyle(color: Colors.white54)),
+                          const SizedBox(height: 24),
+                          Expanded(
+                            child: ListView.separated(
+                              itemCount: stations.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 14),
+                              itemBuilder: (context, i) => _StationTile(
+                                station: stations[i],
+                                selected: i == _index,
+                                onTap: () => _select(i, fromList: true),
+                              ),
+                            ),
+                          ),
+                          if (_player.playing || _index >= 0 && _player.processingState != ProcessingState.idle)
+                            TextButton(
+                              onPressed: () => setState(() => _showList = false),
+                              child: const Text('Back to player'),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
-              StreamBuilder<PlayerState>(
-                stream: _player.playerStateStream,
-                builder: (context, snap) {
-                  final st = snap.data;
-                  final busy = st?.processingState == ProcessingState.loading ||
-                      st?.processingState == ProcessingState.buffering;
-                  final playing = st?.playing ?? false;
-                  return _PlayButton(playing: playing, busy: busy && playing || (busy && _loadedIndex != null), onTap: _toggle);
-                },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StationTile extends StatelessWidget {
+  final Station station;
+  final bool selected;
+  final VoidCallback onTap;
+  const _StationTile(
+      {required this.station, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Ink(
+          height: 104,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [station.color, station.color.withOpacity(0.5)],
+            ),
+            border: selected ? Border.all(color: Colors.white, width: 2) : null,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(station.freq,
+                        style: const TextStyle(
+                            fontSize: 30, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    Text(station.name,
+                        style: const TextStyle(
+                            fontSize: 16, color: Colors.white70)),
+                  ],
+                ),
               ),
-              const SizedBox(height: 56),
+              const Icon(Icons.play_circle_fill_rounded,
+                  size: 38, color: Colors.white),
             ],
           ),
         ),
@@ -195,42 +323,42 @@ class _PlayerPageState extends State<PlayerPage> {
 
 class _StationCard extends StatelessWidget {
   final Station station;
-  const _StationCard({required this.station});
+  const _StationCard({super.key, required this.station});
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 0.82,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [station.color, station.color.withOpacity(0.55)],
+    final w = MediaQuery.of(context).size.width * 0.78;
+    return Container(
+      width: w,
+      height: w * 1.2,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [station.color, station.color.withOpacity(0.55)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: station.color.withOpacity(0.45),
+            blurRadius: 30,
+            offset: const Offset(0, 16),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: station.color.withOpacity(0.45),
-              blurRadius: 30,
-              offset: const Offset(0, 16),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.radio, size: 56, color: Colors.white70),
-            const SizedBox(height: 20),
-            Text(station.freq,
-                style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Text(station.name,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
-          ],
-        ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.radio, size: 56, color: Colors.white70),
+          const SizedBox(height: 20),
+          Text(station.freq,
+              style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(station.name,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
+        ],
       ),
     );
   }
@@ -240,7 +368,8 @@ class _PlayButton extends StatelessWidget {
   final bool playing;
   final bool busy;
   final VoidCallback onTap;
-  const _PlayButton({required this.playing, required this.busy, required this.onTap});
+  const _PlayButton(
+      {required this.playing, required this.busy, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -250,7 +379,7 @@ class _PlayButton extends StatelessWidget {
         width: 78,
         height: 78,
         decoration: const BoxDecoration(
-          color: Color(0xFF1DB954), // Spotify green
+          color: Color(0xFF1DB954),
           shape: BoxShape.circle,
         ),
         child: busy
