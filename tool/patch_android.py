@@ -11,23 +11,27 @@ def patch_manifest():
 
     content = manifest_path.read_text()
 
-    # 1. Add ALL required permissions (including network ones)
-    permissions_to_add = [
+    # 1. Add all required permissions
+    permissions = [
         '<uses-permission android:name="android.permission.WAKE_LOCK"/>',
         '<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>',
         '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>',
-        '<uses-permission android:name="android.permission.INTERNET"/>', # For network audio streaming
-        '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>', # Recommended
-        '<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>' # Required for the local media server
+        '<uses-permission android:name="android.permission.INTERNET"/>',
+        '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
+        '<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>'
     ]
     
-    for perm in permissions_to_add:
+    for perm in permissions:
         if perm not in content:
-            content = content.replace('<application', perm + '\n    <application', 1)
+            # Add permissions right after the <manifest> tag
+            content = content.replace('<manifest', '<manifest\n    ' + perm, 1)
 
-    # 2. Add the AudioService and MediaButtonReceiver
+    # 2. Enable Cleartext Traffic (Crucial for HTTP radio streams)
+    if 'android:usesCleartextTraffic="true"' not in content:
+        content = content.replace('<application', '<application\n        android:usesCleartextTraffic="true"', 1)
+
+    # 3. Add AudioService and Receiver
     audio_service_xml = """
-    <!-- AudioService for background playback -->
     <service
         android:name="com.ryanheise.audioservice.AudioService"
         android:foregroundServiceType="mediaPlayback"
@@ -36,8 +40,6 @@ def patch_manifest():
             <action android:name="android.media.browse.MediaBrowserService" />
         </intent-filter>
     </service>
-
-    <!-- MediaButtonReceiver for headset controls -->
     <receiver
         android:name="com.ryanheise.audioservice.MediaButtonReceiver"
         android:exported="true">
@@ -46,7 +48,6 @@ def patch_manifest():
         </intent-filter>
     </receiver>
 """
-    
     if 'com.ryanheise.audioservice.AudioService' not in content:
         content = content.replace('</application>', audio_service_xml + '\n</application>')
 
@@ -54,36 +55,25 @@ def patch_manifest():
     print("Successfully patched AndroidManifest.xml")
 
 def patch_main_activity():
-    # Find the MainActivity.kt file (path may vary based on package name)
+    # Find MainActivity.kt
     main_activity_paths = list(pathlib.Path("android").rglob("MainActivity.kt"))
     if not main_activity_paths:
-        main_activity_paths = list(pathlib.Path("android").rglob("MainActivity.java"))
-
-    if not main_activity_paths:
-        print("MainActivity.kt/java not found. Cannot patch activity.")
         return
 
     for activity_path in main_activity_paths:
         content = activity_path.read_text()
-        original_content = content
-
-        # 1. Add the import for AudioServiceActivity
+        
+        # Add import for AudioServiceActivity
         import_statement = "import com.ryanheise.audioservice.AudioServiceActivity"
         if import_statement not in content:
             content = re.sub(r'(package\s+[^\n]+\n)', r'\1\n' + import_statement + '\n', content, count=1)
 
-        # 2. Change the superclass from FlutterActivity to AudioServiceActivity
-        content = re.sub(
-            r'class\s+MainActivity\s*:\s*FlutterActivity\s*\(\s*\)',
-            'class MainActivity: AudioServiceActivity()',
-            content
-        )
+        # Change FlutterActivity to AudioServiceActivity
+        content = content.replace('FlutterActivity()', 'AudioServiceActivity()')
+        content = content.replace('FlutterFragmentActivity()', 'AudioServiceFragmentActivity()')
 
-        if content != original_content:
-            activity_path.write_text(content)
-            print(f"Successfully patched {activity_path}")
-        else:
-            print(f"No changes needed for {activity_path}")
+        activity_path.write_text(content)
+        print(f"Successfully patched {activity_path}")
 
 if __name__ == "__main__":
     patch_manifest()
