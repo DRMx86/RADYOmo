@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Patches the generated AndroidManifest.xml for just_audio_background."""
+"""Patches generated Android files for just_audio_background."""
 import pathlib
+import re
 
 def patch_manifest():
     manifest_path = pathlib.Path("android/app/src/main/AndroidManifest.xml")
@@ -19,7 +20,6 @@ def patch_manifest():
     
     for perm in permissions_to_add:
         if perm not in content:
-            # Insert before the <application> tag
             content = content.replace('<application', perm + '\n    <application', 1)
 
     # 2. Add the AudioService and MediaButtonReceiver
@@ -45,25 +45,65 @@ def patch_manifest():
 """
     
     if 'com.ryanheise.audioservice.AudioService' not in content:
-        # Insert before the closing </application> tag
         content = content.replace('</application>', audio_service_xml + '\n</application>')
 
-    # 3. Change the MainActivity to use AudioServiceActivity
-    # The default activity is usually com.example.ph_radio.MainActivity
-    # We need to replace it with com.ryanheise.audioservice.AudioServiceActivity
-    if 'com.ryanheise.audioservice.AudioServiceActivity' not in content:
-        # This regex finds the <activity> block that contains the MAIN/LAUNCHER intent filter
-        # and replaces its android:name attribute.
-        import re
-        pattern = r'(<activity\s+[^>]*?android:name=")[^"]*("(?:(?!</activity>).)*?<intent-filter>\s*<action android:name="android.intent.action.MAIN" />)'
-        
-        def replacer(match):
-            return match.group(1) + 'com.ryanheise.audioservice.AudioServiceActivity' + match.group(2)
-
-        content = re.sub(pattern, replacer, content, flags=re.DOTALL)
+    # 3. Ensure the MainActivity is referenced correctly in the manifest
+    if 'com.ryanheise.audioservice.AudioServiceActivity' in content:
+        # If the manifest already points to AudioServiceActivity, we can leave it.
+        # The MainActivity.kt patch will handle the engine provision.
+        pass
+    else:
+        # If the manifest still points to a custom activity (e.g., .MainActivity),
+        # we leave it as is; the MainActivity.kt patch will make it extend AudioServiceActivity.
+        pass
 
     manifest_path.write_text(content)
     print("Successfully patched AndroidManifest.xml")
 
+def patch_main_activity():
+    # Find the MainActivity.kt file (path may vary based on package name)
+    # Common path: android/app/src/main/kotlin/com/example/radyomo/MainActivity.kt
+    main_activity_paths = list(pathlib.Path("android").rglob("MainActivity.kt"))
+    if not main_activity_paths:
+        # Try .java as a fallback
+        main_activity_paths = list(pathlib.Path("android").rglob("MainActivity.java"))
+
+    if not main_activity_paths:
+        print("MainActivity.kt/java not found. Cannot patch activity.")
+        return
+
+    for activity_path in main_activity_paths:
+        content = activity_path.read_text()
+        original_content = content
+
+        # 1. Add the import for AudioServiceActivity
+        import_statement = "import com.ryanheise.audioservice.AudioServiceActivity"
+        if import_statement not in content:
+            # Insert the import after the package declaration
+            content = re.sub(r'(package\s+[^\n]+\n)', r'\1\n' + import_statement + '\n', content, count=1)
+
+        # 2. Change the superclass from FlutterActivity to AudioServiceActivity
+        # Kotlin syntax: class MainActivity: FlutterActivity() { ... }
+        content = re.sub(
+            r'class\s+MainActivity\s*:\s*FlutterActivity\s*\(\s*\)',
+            'class MainActivity: AudioServiceActivity()',
+            content
+        )
+
+        # 3. If the class extends FlutterFragmentActivity, use AudioServiceFragmentActivity
+        # (Uncomment the following block if your app uses fragments)
+        # content = re.sub(
+        #     r'class\s+MainActivity\s*:\s*FlutterFragmentActivity\s*\(\s*\)',
+        #     'class MainActivity: AudioServiceFragmentActivity()',
+        #     content
+        # )
+
+        if content != original_content:
+            activity_path.write_text(content)
+            print(f"Successfully patched {activity_path}")
+        else:
+            print(f"No changes needed for {activity_path}")
+
 if __name__ == "__main__":
     patch_manifest()
+    patch_main_activity()
