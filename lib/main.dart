@@ -69,7 +69,7 @@ class _PlayerPageState extends State<PlayerPage> {
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     );
 
-    // Setup the player with a playlist so notification has Skip buttons
+    // Setup the player with a playlist
     _setupAudioSources();
 
     // Listen to notification/lock screen controls to update UI
@@ -140,7 +140,6 @@ class _PlayerPageState extends State<PlayerPage> {
       if (fromList) _showList = false;
     });
     
-    // Seek to the new station in the playlist
     _player.seek(Duration.zero, index: i);
     if (!_player.playing) _player.play();
   }
@@ -184,19 +183,37 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  Widget _buildPlayButton() {
-    return StreamBuilder<PlayerState>(
-      stream: _player.playerStateStream,
-      builder: (context, snap) {
-        final s = snap.data;
-        final loading = s?.processingState == ProcessingState.loading ||
-            s?.processingState == ProcessingState.buffering;
-        return _PlayButton(
-          playing: s?.playing ?? false,
-          busy: loading,
-          onTap: _toggle,
-        );
-      },
+  // NEW: Combined controls with Previous, Play/Pause, Next
+  Widget _buildControls() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          iconSize: 42,
+          icon: const Icon(Icons.skip_previous_rounded, color: Colors.white),
+          onPressed: () => _player.seekToPrevious(),
+        ),
+        const SizedBox(width: 16),
+        StreamBuilder<PlayerState>(
+          stream: _player.playerStateStream,
+          builder: (context, snap) {
+            final s = snap.data;
+            final loading = s?.processingState == ProcessingState.loading ||
+                s?.processingState == ProcessingState.buffering;
+            return _PlayButton(
+              playing: s?.playing ?? false,
+              busy: loading,
+              onTap: _toggle,
+            );
+          },
+        ),
+        const SizedBox(width: 16),
+        IconButton(
+          iconSize: 42,
+          icon: const Icon(Icons.skip_next_rounded, color: Colors.white),
+          onPressed: () => _player.seekToNext(),
+        ),
+      ],
     );
   }
 
@@ -310,7 +327,7 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  // Portrait Layout: Card -> Dots -> Volume -> Play Button
+  // Portrait Layout: Card -> Dots -> Volume -> Controls
   Widget _buildPortraitLayout(Station st) {
     return Column(
       children: [
@@ -338,13 +355,13 @@ class _PlayerPageState extends State<PlayerPage> {
         const SizedBox(height: 16),
         _buildVolumeSlider(),
         const SizedBox(height: 16),
-        _buildPlayButton(),
-        const SizedBox(height: 48),
+        _buildControls(), // <-- Added Previous, Play, Next buttons here
+        const SizedBox(height: 32),
       ],
     );
   }
 
-  // Landscape Layout: Row [ Card ] [ Dots -> Volume -> Play Button ]
+  // Landscape Layout: Row [ Card ] [ Dots -> Volume -> Controls ]
   Widget _buildLandscapeLayout(Station st) {
     return Row(
       children: [
@@ -365,7 +382,6 @@ class _PlayerPageState extends State<PlayerPage> {
                     child: FadeTransition(opacity: anim, child: child),
                   );
                 },
-                // Smaller card size for landscape
                 child: _StationCard(
                   key: ValueKey(_index), 
                   station: st,
@@ -386,7 +402,7 @@ class _PlayerPageState extends State<PlayerPage> {
               const SizedBox(height: 24),
               _buildVolumeSlider(),
               const SizedBox(height: 24),
-              _buildPlayButton(),
+              _buildControls(), // <-- Added Previous, Play, Next buttons here
             ],
           ),
         ),
@@ -479,7 +495,6 @@ class _StationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Responsive sizing based on orientation
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     
