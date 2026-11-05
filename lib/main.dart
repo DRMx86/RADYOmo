@@ -65,12 +65,12 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   void initState() {
     super.initState();
-    // FIXED: Added userAgent so the radio servers don't block the app
+    // Added userAgent so the radio servers don't block the app
     _player = AudioPlayer(
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     );
 
-    // FIXED: Added error listener for just_audio 0.9.46 without breaking your UI
+    // Added error listener for just_audio 0.9.46 without breaking your UI
     _player.playbackEventStream.listen(
       (event) {},
       onError: (Object error, StackTrace stackTrace) {
@@ -312,11 +312,13 @@ class _StationTile extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(station.freq,
-                        style: const TextStyle(
-                            fontSize: 30, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
+                    // SWAPPED: Name is now on top with the larger font
                     Text(station.name,
+                        style: const TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    // SWAPPED: Frequency is now on the bottom
+                    Text(station.freq,
                         style: const TextStyle(
                             fontSize: 16, color: Colors.white70)),
                   ],
@@ -363,11 +365,13 @@ class _StationCard extends StatelessWidget {
         children: [
           const Icon(Icons.radio, size: 56, color: Colors.white70),
           const SizedBox(height: 20),
-          Text(station.freq,
-              style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
+          // SWAPPED: Name is now on top with the larger font
           Text(station.name,
               textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          // SWAPPED: Frequency is now on the bottom
+          Text(station.freq,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
         ],
       ),
