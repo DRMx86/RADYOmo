@@ -14,7 +14,6 @@ void main() async {
   runApp(const RadioApp());
 }
 
-// Data model for the stations
 class RadioStation {
   final String name;
   final String frequency;
@@ -63,17 +62,10 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
   int _currentIndex = 0;
   String? _errorMessage;
   bool _isLoading = false;
-  int? _playingStationIndex; // Tracks which station is currently loaded
+  int? _playingStationIndex;
 
-  // List of stations. Update the URLs and logos as needed!
+  // YOUR EXACT ORIGINAL STATIONS
   final List<RadioStation> stations = [
-    RadioStation(
-      name: 'Magic',
-      frequency: '89.9',
-      url: 'https://in-icecast.eradioportal.com:8443/magic899', // Replace if needed
-      color: const Color(0xFFE67E22), // Orange
-      logoUrl: 'https://via.placeholder.com/300/E67E22/FFFFFF?text=Magic+89.9',
-    ),
     RadioStation(
       name: 'Monster\nRadio',
       frequency: 'RX 93.1',
@@ -82,11 +74,18 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
       logoUrl: 'https://via.placeholder.com/300/E53E3E/FFFFFF?text=Monster+Radio',
     ),
     RadioStation(
-      name: 'Barangay\nLS',
-      frequency: '97.1',
-      url: 'https://in-icecast.eradioportal.com:8443/barangayls', // Replace if needed
+      name: 'Win Radio',
+      frequency: '91.5',
+      url: 'https://stream.zeno.fm/2ss1hgnu6hhvv.m3u',
       color: const Color(0xFF2980B9), // Blue
-      logoUrl: 'https://via.placeholder.com/300/2980B9/FFFFFF?text=Barangay+LS',
+      logoUrl: 'https://via.placeholder.com/300/2980B9/FFFFFF?text=Win+Radio',
+    ),
+    RadioStation(
+      name: 'Magic',
+      frequency: '89.9',
+      url: 'https://stream-161.zeno.fm/sh37pvfd938uv',
+      color: const Color(0xFFE67E22), // Orange
+      logoUrl: 'https://via.placeholder.com/300/E67E22/FFFFFF?text=Magic+89.9',
     ),
   ];
 
@@ -115,7 +114,6 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
   Future<void> _togglePlay(int index) async {
     final station = stations[index];
 
-    // If clicking play on a station that isn't currently loaded
     if (_playingStationIndex != index) {
       setState(() {
         _errorMessage = null;
@@ -124,7 +122,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
       });
 
       try {
-        await _player.stop(); // Stop whatever is currently playing
+        await _player.stop();
         await _player.setAudioSource(
           AudioSource.uri(
             Uri.parse(station.url),
@@ -148,7 +146,6 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
         }
       }
     } else {
-      // If clicking play/pause on the station that is already loaded
       if (_player.playing) {
         _player.pause();
       } else {
@@ -228,7 +225,6 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
             ),
           ),
           
-          // Page Indicator Dots
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(
@@ -248,7 +244,6 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
 
           const SizedBox(height: 30),
 
-          // Play Button
           GestureDetector(
             onTap: () => _togglePlay(_currentIndex),
             child: Container(
@@ -257,7 +252,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
               margin: const EdgeInsets.only(bottom: 40),
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                color: Color(0xFF34D399), // Green button
+                color: Color(0xFF34D399),
               ),
               child: _isLoading && _playingStationIndex == _currentIndex
                 ? const Padding(
@@ -274,7 +269,6 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
             ),
           ),
 
-          // Error Message Display
           if (_errorMessage != null)
             Container(
               width: double.infinity,
