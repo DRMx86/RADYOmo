@@ -58,8 +58,8 @@ class PlayerPage extends StatefulWidget {
 class _PlayerPageState extends State<PlayerPage> {
   late final AudioPlayer _player;
   int _index = 0;
-  int _dir = 1; 
-  bool _showList = true; 
+  int _dir = 1;
+  bool _showList = true;
   double _volume = 1.0;
 
   @override
@@ -93,19 +93,22 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _setupAudioSources() async {
     try {
-      final sources = stations
-          .map((s) => AudioSource.uri(
-                Uri.parse(s.url),
-                tag: MediaItem(
-                  id: s.url,
-                  title: s.name,
-                  artist: s.freq,
-                  album: 'Live Radio',
-                ),
-              ))
-          .toList();
+      // FIXED: Using ConcatenatingAudioSource for just_audio 0.9.46
+      final playlist = ConcatenatingAudioSource(
+        children: stations
+            .map((s) => AudioSource.uri(
+                  Uri.parse(s.url),
+                  tag: MediaItem(
+                    id: s.url,
+                    title: s.name,
+                    artist: s.freq,
+                    album: 'Live Radio',
+                  ),
+                ))
+            .toList(),
+      );
 
-      await _player.setAudioSources(sources, initialIndex: _index);
+      await _player.setAudioSource(playlist, initialIndex: _index);
     } catch (_) {
       _snack('Unable to initialize stations.');
     }
@@ -139,7 +142,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _index = i;
       if (fromList) _showList = false;
     });
-    
+
     _player.seek(Duration.zero, index: i);
     if (!_player.playing) _player.play();
   }
@@ -183,7 +186,7 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  // NEW: Combined controls with Previous, Play/Pause, Next
+  // Combined controls with Previous, Play/Pause, Next
   Widget _buildControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -220,7 +223,8 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   Widget build(BuildContext context) {
     final st = stations[_index];
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Scaffold(
       body: Stack(
@@ -237,7 +241,7 @@ class _PlayerPageState extends State<PlayerPage> {
               ),
             ),
           ),
-          
+
           // ---------- MAIN PLAYER LAYOUT ----------
           SafeArea(
             child: Column(
@@ -264,11 +268,11 @@ class _PlayerPageState extends State<PlayerPage> {
                     ],
                   ),
                 ),
-                
+
                 // Responsive Body
                 Expanded(
-                  child: isLandscape 
-                      ? _buildLandscapeLayout(st) 
+                  child: isLandscape
+                      ? _buildLandscapeLayout(st)
                       : _buildPortraitLayout(st),
                 ),
               ],
@@ -302,7 +306,8 @@ class _PlayerPageState extends State<PlayerPage> {
                           Expanded(
                             child: ListView.separated(
                               itemCount: stations.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 14),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 14),
                               itemBuilder: (context, i) => _StationTile(
                                 station: stations[i],
                                 selected: i == _index,
@@ -311,7 +316,8 @@ class _PlayerPageState extends State<PlayerPage> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () => setState(() => _showList = false),
+                            onPressed: () =>
+                                setState(() => _showList = false),
                             child: const Text('Back to player'),
                           ),
                         ],
@@ -340,9 +346,12 @@ class _PlayerPageState extends State<PlayerPage> {
                 duration: const Duration(milliseconds: 350),
                 transitionBuilder: (child, anim) {
                   final incoming = child.key == ValueKey(_index);
-                  final begin = Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                  final begin =
+                      Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
                   return SlideTransition(
-                    position: Tween<Offset>(begin: begin, end: Offset.zero).animate(anim),
+                    position:
+                        Tween<Offset>(begin: begin, end: Offset.zero)
+                            .animate(anim),
                     child: FadeTransition(opacity: anim, child: child),
                   );
                 },
@@ -355,7 +364,7 @@ class _PlayerPageState extends State<PlayerPage> {
         const SizedBox(height: 16),
         _buildVolumeSlider(),
         const SizedBox(height: 16),
-        _buildControls(), // <-- Added Previous, Play, Next buttons here
+        _buildControls(),
         const SizedBox(height: 32),
       ],
     );
@@ -376,14 +385,17 @@ class _PlayerPageState extends State<PlayerPage> {
                 duration: const Duration(milliseconds: 350),
                 transitionBuilder: (child, anim) {
                   final incoming = child.key == ValueKey(_index);
-                  final begin = Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                  final begin =
+                      Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
                   return SlideTransition(
-                    position: Tween<Offset>(begin: begin, end: Offset.zero).animate(anim),
+                    position:
+                        Tween<Offset>(begin: begin, end: Offset.zero)
+                            .animate(anim),
                     child: FadeTransition(opacity: anim, child: child),
                   );
                 },
                 child: _StationCard(
-                  key: ValueKey(_index), 
+                  key: ValueKey(_index),
                   station: st,
                   isLandscape: true,
                 ),
@@ -391,7 +403,7 @@ class _PlayerPageState extends State<PlayerPage> {
             ),
           ),
         ),
-        
+
         // Right side: Controls
         Expanded(
           flex: 5,
@@ -402,7 +414,7 @@ class _PlayerPageState extends State<PlayerPage> {
               const SizedBox(height: 24),
               _buildVolumeSlider(),
               const SizedBox(height: 24),
-              _buildControls(), // <-- Added Previous, Play, Next buttons here
+              _buildControls(),
             ],
           ),
         ),
@@ -453,7 +465,9 @@ class _StationTile extends StatelessWidget {
               end: Alignment.centerRight,
               colors: [station.color, station.color.withOpacity(0.5)],
             ),
-            border: selected ? Border.all(color: Colors.white, width: 2) : null,
+            border: selected
+                ? Border.all(color: Colors.white, width: 2)
+                : null,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 22),
           child: Row(
@@ -486,9 +500,9 @@ class _StationTile extends StatelessWidget {
 class _StationCard extends StatelessWidget {
   final Station station;
   final bool isLandscape;
-  
+
   const _StationCard({
-    super.key, 
+    super.key,
     required this.station,
     this.isLandscape = false,
   });
@@ -497,7 +511,7 @@ class _StationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     final w = isLandscape ? screenHeight * 0.6 : screenWidth * 0.78;
     final h = isLandscape ? screenHeight * 0.7 : w * 1.2;
 
@@ -523,18 +537,19 @@ class _StationCard extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.radio, size: isLandscape ? 40 : 56, color: Colors.white70),
+          Icon(Icons.radio,
+              size: isLandscape ? 40 : 56, color: Colors.white70),
           SizedBox(height: isLandscape ? 12 : 20),
           Text(station.name,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: isLandscape ? 28 : 34, 
+                fontSize: isLandscape ? 28 : 34,
                 fontWeight: FontWeight.w800,
               )),
           const SizedBox(height: 8),
           Text(station.freq,
               style: TextStyle(
-                fontSize: isLandscape ? 16 : 20, 
+                fontSize: isLandscape ? 16 : 20,
                 fontWeight: FontWeight.w500,
               )),
         ],
@@ -564,7 +579,8 @@ class _PlayButton extends StatelessWidget {
         child: busy
             ? const Padding(
                 padding: EdgeInsets.all(24),
-                child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black),
+                child: CircularProgressIndicator(
+                    strokeWidth: 3, color: Colors.black),
               )
             : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 size: 46, color: Colors.black),
