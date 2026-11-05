@@ -1,105 +1,80 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.example.radyomo.channel.audio',
-    androidNotificationChannelName: 'RADYOmo Playback',
-    androidNotificationOngoing: true,
-  );
-
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.phradio.channel.audio',
+      androidNotificationChannelName: 'Radio playback',
+      androidNotificationOngoing: true,
+    );
+  } catch (_) {
+    // App still opens even if background service fails to start.
+  }
+  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
   runApp(const RadioApp());
 }
 
-class RadioStation {
+class Station {
   final String name;
-  final String frequency;
+  final String freq;
   final String url;
   final Color color;
-  final String logoUrl;
-
-  RadioStation({
-    required this.name,
-    required this.frequency,
-    required this.url,
-    required this.color,
-    required this.logoUrl,
-  });
+  const Station(this.name, this.freq, this.url, this.color);
 }
+
+const stations = <Station>[
+  Station('Monster Radio', 'RX 93.1',
+      'https://in-icecast.eradioportal.com:8443/monsterrrx', Color(0xFFE53935)),
+  // ".m3u" removed: the player needs the raw stream, not a playlist file.
+  Station('Win Radio', '91.5', 'https://stream.zeno.fm/2ss1hgnu6hhvv',
+      Color(0xFF1E88E5)),
+  Station('Magic', '89.9', 'https://stream-161.zeno.fm/sh37pvfd938uv',
+      Color(0xFFFB8C00)),
+];
 
 class RadioApp extends StatelessWidget {
-  const RadioApp({Key? key}) : super(key: key);
-
+  const RadioApp({super.key});
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'RADYOmo',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF161616),
-      ),
-      home: const RadioPlayerScreen(),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'PH Radio',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: const Color(0xFF121212),
+        ),
+        home: const PlayerPage(),
+      );
 }
 
-class RadioPlayerScreen extends StatefulWidget {
-  const RadioPlayerScreen({Key? key}) : super(key: key);
-
+class PlayerPage extends StatefulWidget {
+  const PlayerPage({super.key});
   @override
-  State<RadioPlayerScreen> createState() => _RadioPlayerScreenState();
+  State<PlayerPage> createState() => _PlayerPageState();
 }
 
-class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
-  final AudioPlayer _player = AudioPlayer(
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  );
-
-  final PageController _pageController = PageController(viewportFraction: 0.85);
-  int _currentIndex = 0;
-  String? _errorMessage;
-  bool _isLoading = false;
-  int? _playingStationIndex;
-
-  // YOUR EXACT ORIGINAL STATIONS
-  final List<RadioStation> stations = [
-    RadioStation(
-      name: 'Monster\nRadio',
-      frequency: 'RX 93.1',
-      url: 'https://in-icecast.eradioportal.com:8443/monsterrrx',
-      color: const Color(0xFFE53E3E), // Red
-      logoUrl: 'https://via.placeholder.com/300/E53E3E/FFFFFF?text=Monster+Radio',
-    ),
-    RadioStation(
-      name: 'Win Radio',
-      frequency: '91.5',
-      url: 'https://stream.zeno.fm/2ss1hgnu6hhvv.m3u',
-      color: const Color(0xFF2980B9), // Blue
-      logoUrl: 'https://via.placeholder.com/300/2980B9/FFFFFF?text=Win+Radio',
-    ),
-    RadioStation(
-      name: 'Magic',
-      frequency: '89.9',
-      url: 'https://stream-161.zeno.fm/sh37pvfd938uv',
-      color: const Color(0xFFE67E22), // Orange
-      logoUrl: 'https://via.placeholder.com/300/E67E22/FFFFFF?text=Magic+89.9',
-    ),
-  ];
+class _PlayerPageState extends State<PlayerPage> {
+  late final AudioPlayer _player;
+  int _index = 0;
+  int _dir = 1; // slide direction for station change
+  bool _showList = true; // station selection visible on launch
 
   @override
   void initState() {
     super.initState();
-    
+    // FIXED: Added userAgent so the radio servers don't block the app
+    _player = AudioPlayer(
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    );
+
+    // FIXED: Added error listener for just_audio 0.9.46 without breaking your UI
     _player.playbackEventStream.listen(
       (event) {},
       onError: (Object error, StackTrace stackTrace) {
-        setState(() {
-          _errorMessage = "Playback Error: ${error.toString()}";
-          _isLoading = false;
-        });
+        _snack('Playback error. Check your connection.');
       },
     );
   }
@@ -107,179 +82,324 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen> {
   @override
   void dispose() {
     _player.dispose();
-    _pageController.dispose();
     super.dispose();
   }
 
-  Future<void> _togglePlay(int index) async {
-    final station = stations[index];
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
 
-    if (_playingStationIndex != index) {
-      setState(() {
-        _errorMessage = null;
-        _isLoading = true;
-        _playingStationIndex = index;
-      });
-
-      try {
-        await _player.stop();
-        await _player.setAudioSource(
-          AudioSource.uri(
-            Uri.parse(station.url),
-            tag: MediaItem(
-              id: station.name,
-              title: station.name.replaceAll('\n', ' '),
-              artist: station.frequency,
-              artUri: Uri.parse(station.logoUrl),
-            ),
-          ),
-        );
-        
-        if (mounted) setState(() => _isLoading = false);
-        _player.play();
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _errorMessage = "Error: $e";
-            _isLoading = false;
-          });
-        }
-      }
-    } else {
-      if (_player.playing) {
-        _player.pause();
-      } else {
-        _player.play();
-      }
-      setState(() {});
+  Future<void> _load(int i) async {
+    final s = stations[i];
+    try {
+      await _player.setAudioSource(AudioSource.uri(
+        Uri.parse(s.url),
+        tag: MediaItem(id: s.url, title: s.name, artist: s.freq, album: 'Live Radio'),
+      ));
+      _player.play();
+    } catch (_) {
+      _snack('Unable to play this station. Check your connection.');
     }
+  }
+
+  Future<void> _toggle() async {
+    if (_player.playing) {
+      await _player.stop(); // live stream: resume returns to live
+    } else {
+      await _load(_index);
+    }
+  }
+
+  void _select(int i, {bool fromList = false}) {
+    setState(() {
+      _dir = i >= _index ? 1 : -1;
+      _index = i;
+      if (fromList) _showList = false;
+    });
+    if (fromList || _player.playing) _load(i);
+  }
+
+  void _onSwipe(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (v < -300 && _index < stations.length - 1) _select(_index + 1);
+    if (v > 300 && _index > 0) _select(_index - 1);
   }
 
   @override
   Widget build(BuildContext context) {
+    final st = stations[_index];
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('LIVE RADIO', style: TextStyle(letterSpacing: 2, fontSize: 14)),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.queue_music),
-            onPressed: () {},
-          )
-        ],
-      ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: stations.length,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                final station = stations[index];
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 40),
-                  decoration: BoxDecoration(
-                    color: station.color,
-                    borderRadius: BorderRadius.circular(25),
-                    boxShadow: [
-                      if (_currentIndex == index)
-                        BoxShadow(
-                          color: station.color.withOpacity(0.4),
-                          blurRadius: 50,
-                          spreadRadius: 10,
-                        )
-                    ],
+          // ---------- PLAYER ----------
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [st.color.withOpacity(0.6), const Color(0xFF121212)],
+                stops: const [0, 0.7],
+              ),
+            ),
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 48),
+                        const Expanded(
+                          child: Center(
+                            child: Text('LIVE RADIO',
+                                style: TextStyle(
+                                    letterSpacing: 3,
+                                    fontSize: 12,
+                                    color: Colors.white70)),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.queue_music_rounded),
+                          onPressed: () => setState(() => _showList = true),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.radio, size: 70, color: Colors.white70),
-                      const SizedBox(height: 30),
-                      Text(
-                        station.name,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 36, 
-                          fontWeight: FontWeight.bold, 
-                          height: 1.1,
-                          color: Colors.white
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragEnd: _onSwipe,
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 350),
+                          transitionBuilder: (child, anim) {
+                            final incoming = child.key == ValueKey(_index);
+                            final begin = Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                            return SlideTransition(
+                              position: Tween<Offset>(begin: begin, end: Offset.zero)
+                                  .animate(anim),
+                              child: FadeTransition(opacity: anim, child: child),
+                            );
+                          },
+                          child: _StationCard(key: ValueKey(_index), station: st),
                         ),
                       ),
-                      const SizedBox(height: 15),
-                      Text(
-                        station.frequency, 
-                        style: const TextStyle(fontSize: 20, color: Colors.white70)
-                      ),
-                    ],
+                    ),
                   ),
-                );
-              },
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      stations.length,
+                      (i) => AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: i == _index ? 20 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: i == _index ? Colors.white : Colors.white30,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  StreamBuilder<PlayerState>(
+                    stream: _player.playerStateStream,
+                    builder: (context, snap) {
+                      final s = snap.data;
+                      final loading =
+                          s?.processingState == ProcessingState.loading ||
+                              s?.processingState == ProcessingState.buffering;
+                      return _PlayButton(
+                        playing: s?.playing ?? false,
+                        busy: loading,
+                        onTap: _toggle,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 48),
+                ],
+              ),
             ),
           ),
-          
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              stations.length,
-              (index) => AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                height: 6,
-                width: _currentIndex == index ? 24 : 6,
-                decoration: BoxDecoration(
-                  color: _currentIndex == index ? Colors.white : Colors.white38,
-                  borderRadius: BorderRadius.circular(3),
+
+          // ---------- STATION SELECTION (slides in / out) ----------
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_showList,
+              child: AnimatedSlide(
+                offset: _showList ? Offset.zero : const Offset(0, 1),
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeOutCubic,
+                child: Container(
+                  color: const Color(0xFF121212),
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 28),
+                          const Text('Select Station',
+                              style: TextStyle(
+                                  fontSize: 28, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          const Text('Choose a radio station to start listening',
+                              style: TextStyle(color: Colors.white54)),
+                          const SizedBox(height: 24),
+                          Expanded(
+                            child: ListView.separated(
+                              itemCount: stations.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 14),
+                              itemBuilder: (context, i) => _StationTile(
+                                station: stations[i],
+                                selected: i == _index,
+                                onTap: () => _select(i, fromList: true),
+                              ),
+                            ),
+                          ),
+                          if (_player.playing || _index >= 0 && _player.processingState != ProcessingState.idle)
+                            TextButton(
+                              onPressed: () => setState(() => _showList = false),
+                              child: const Text('Back to player'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-
-          const SizedBox(height: 30),
-
-          GestureDetector(
-            onTap: () => _togglePlay(_currentIndex),
-            child: Container(
-              width: 80,
-              height: 80,
-              margin: const EdgeInsets.only(bottom: 40),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFF34D399),
-              ),
-              child: _isLoading && _playingStationIndex == _currentIndex
-                ? const Padding(
-                    padding: EdgeInsets.all(24.0),
-                    child: CircularProgressIndicator(color: Colors.black),
-                  )
-                : Icon(
-                    (_player.playing && _playingStationIndex == _currentIndex) 
-                        ? Icons.pause 
-                        : Icons.play_arrow,
-                    color: Colors.black,
-                    size: 40,
-                  ),
-            ),
-          ),
-
-          if (_errorMessage != null)
-            Container(
-              width: double.infinity,
-              color: Colors.white,
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _errorMessage!,
-                style: const TextStyle(color: Colors.black),
-              ),
-            ),
         ],
+      ),
+    );
+  }
+}
+
+class _StationTile extends StatelessWidget {
+  final Station station;
+  final bool selected;
+  final VoidCallback onTap;
+  const _StationTile(
+      {required this.station, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Ink(
+          height: 104,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [station.color, station.color.withOpacity(0.5)],
+            ),
+            border: selected ? Border.all(color: Colors.white, width: 2) : null,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(station.freq,
+                        style: const TextStyle(
+                            fontSize: 30, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    Text(station.name,
+                        style: const TextStyle(
+                            fontSize: 16, color: Colors.white70)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.play_circle_fill_rounded,
+                  size: 38, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StationCard extends StatelessWidget {
+  final Station station;
+  const _StationCard({super.key, required this.station});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width * 0.78;
+    return Container(
+      width: w,
+      height: w * 1.2,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [station.color, station.color.withOpacity(0.55)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: station.color.withOpacity(0.45),
+            blurRadius: 30,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.radio, size: 56, color: Colors.white70),
+          const SizedBox(height: 20),
+          Text(station.freq,
+              style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(station.name,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayButton extends StatelessWidget {
+  final bool playing;
+  final bool busy;
+  final VoidCallback onTap;
+  const _PlayButton(
+      {required this.playing, required this.busy, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 78,
+        height: 78,
+        decoration: const BoxDecoration(
+          color: Color(0xFF1DB954),
+          shape: BoxShape.circle,
+        ),
+        child: busy
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black),
+              )
+            : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                size: 46, color: Colors.black),
       ),
     );
   }
