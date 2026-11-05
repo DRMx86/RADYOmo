@@ -36,4 +36,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ph-radio-apk
-          path: build/app/outputs/flutter-apk/radyomo.apk
+          # FIXED: Changed from radyomo.apk to the default Flutter output name
+          path: build/app/outputs/flutter-apk/app-release.apk
