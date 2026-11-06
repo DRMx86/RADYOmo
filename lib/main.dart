@@ -7,7 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Request notification permission for Android 13+
   await Permission.notification.request();
 
@@ -17,16 +17,16 @@ Future<void> main() async {
       androidNotificationChannelName: 'Radio playback',
       androidNotificationOngoing: true,
       // Keeps the notification and its controls active even when paused
-      androidStopForegroundOnPause: false, 
+      androidStopForegroundOnPause: false,
     );
   } catch (_) {
     // App still opens even if background service fails to start.
   }
-  
+
   // Hide system UI (nav bars) for immersive experience
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
-  
+
   runApp(const RadioApp());
 }
 
@@ -195,10 +195,12 @@ class _PlayerPageState extends State<PlayerPage> {
               ),
               child: Slider(
                 value: _volume,
-                onChanged: (v) {
+                onChanged: (v) async {
                   setState(() => _volume = v);
-                  // showSystemUI: false prevents the Android volume bar from popping up
-                  VolumeController.instance.setVolume(v, showSystemUI: false);
+                  // Hide system UI when dragging the in‑app slider.
+                  // Physical volume buttons will still show the system UI.
+                  await VolumeController.instance.updateShowSystemUI(false);
+                  VolumeController.instance.setVolume(v);
                 },
               ),
             ),
