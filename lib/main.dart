@@ -152,7 +152,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _select(int i, {bool fromList = false}) {
-    if (i < 0 || i >= stations.length) return; // Prevent out-of-bounds
+    if (i < 0 || i >= stations.length) return; 
     setState(() {
       _dir = i >= _index ? 1 : -1;
       _index = i;
@@ -239,18 +239,14 @@ class _PlayerPageState extends State<PlayerPage> {
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
 
-    // PopScope handles the physical Back button on phones and TV remotes
     return PopScope(
       canPop: _showList, 
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        // If back is pressed while on the player, show the station list
         setState(() => _showList = true);
       },
       child: CallbackShortcuts(
         bindings: {
-          // Map TV Remote directional pad to station changes
-          // FIXED: Wrapped LogicalKeyboardKey in SingleActivator
           const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
             if (!_showList) _select(_index - 1);
           },
@@ -542,12 +538,14 @@ class _StationCard extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
 
     final w = isLandscape ? screenHeight * 0.6 : screenWidth * 0.78;
-    final h = isLandscape ? screenHeight * 0.7 : w * 1.2;
+    // Changed h to equal w to make it a perfect square
+    final h = w; 
 
     return Container(
       width: w,
       height: h,
       decoration: BoxDecoration(
+        // This keeps the rounded corners
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
