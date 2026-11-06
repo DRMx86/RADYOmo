@@ -7,7 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  
   // Request notification permission for Android 13+
   await Permission.notification.request();
 
@@ -16,17 +16,11 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.phradio.channel.audio',
       androidNotificationChannelName: 'Radio playback',
       androidNotificationOngoing: true,
-      // Keeps the notification and its controls active even when paused
-      androidStopForegroundOnPause: false,
     );
   } catch (_) {
     // App still opens even if background service fails to start.
   }
-
-  // Hide system UI (nav bars) for immersive experience
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
-
   runApp(const RadioApp());
 }
 
@@ -56,6 +50,8 @@ class RadioApp extends StatelessWidget {
         theme: ThemeData(
           brightness: Brightness.dark,
           scaffoldBackgroundColor: const Color(0xFF121212),
+          // TV REMOTE FOCUS HIGHLIGHT
+          focusColor: Colors.white.withOpacity(0.3),
         ),
         home: const PlayerPage(),
       );
@@ -84,7 +80,6 @@ class _PlayerPageState extends State<PlayerPage> {
     _setupAudioSources();
     _setupVolumeListener();
 
-    // Listen to notification/lock screen controls to update UI
     _player.currentIndexStream.listen((index) {
       if (index != null && index != _index) {
         setState(() {
@@ -102,7 +97,6 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  // Syncs physical volume buttons with the slider
   void _setupVolumeListener() async {
     _volume = await VolumeController.instance.getVolume();
     VolumeController.instance.addListener((volume) {
@@ -114,7 +108,6 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _setupAudioSources() async {
     try {
-      // Using ConcatenatingAudioSource to enable Next/Prev buttons in notification
       final playlist = ConcatenatingAudioSource(
         children: stations
             .map((s) => AudioSource.uri(
@@ -139,8 +132,6 @@ class _PlayerPageState extends State<PlayerPage> {
   void dispose() {
     VolumeController.instance.removeListener();
     _player.dispose();
-    // Restore system UI when app closes
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
@@ -161,6 +152,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _select(int i, {bool fromList = false}) {
+    if (i < 0 || i >= stations.length) return; // Prevent out-of-bounds
     setState(() {
       _dir = i >= _index ? 1 : -1;
       _index = i;
@@ -195,17 +187,9 @@ class _PlayerPageState extends State<PlayerPage> {
               ),
               child: Slider(
                 value: _volume,
-                onChanged: (v) async {
+                onChanged: (v) {
                   setState(() => _volume = v);
-                  // Hide system UI when dragging the in‑app slider.
-                  // This is a property, not a method.
-                  VolumeController.instance.showSystemUI = false;
-                  await VolumeController.instance.setVolume(v);
-                },
-                onChangeEnd: (v) {
-                  // Optional: restore the property after dragging ends
-                  // so other system volume changes can show the UI.
-                  VolumeController.instance.showSystemUI = true;
+                  VolumeController.instance.setVolume(v);
                 },
               ),
             ),
@@ -255,101 +239,125 @@ class _PlayerPageState extends State<PlayerPage> {
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 500),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [st.color.withOpacity(0.6), const Color(0xFF121212)],
-                stops: const [0, 0.7],
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Column(
+    // PopScope handles the physical Back button on phones and TV remotes
+    return PopScope(
+      canPop: _showList, 
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        // If back is pressed while on the player, show the station list
+        setState(() => _showList = true);
+      },
+      child: CallbackShortcuts(
+        bindings: {
+          // Map TV Remote directional pad to station changes
+          LogicalKeyboardKey.arrowLeft: () {
+            if (!_showList) _select(_index - 1);
+          },
+          LogicalKeyboardKey.arrowRight: () {
+            if (!_showList) _select(_index + 1);
+          },
+          LogicalKeyboardKey.mediaPlayPause: _toggle,
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            body: Stack(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                  child: Row(
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 500),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [st.color.withOpacity(0.6), const Color(0xFF121212)],
+                      stops: const [0, 0.7],
+                    ),
+                  ),
+                ),
+                SafeArea(
+                  child: Column(
                     children: [
-                      const SizedBox(width: 48),
-                      const Expanded(
-                        child: Center(
-                          child: Text('LIVE RADIO',
-                              style: TextStyle(
-                                  letterSpacing: 3,
-                                  fontSize: 12,
-                                  color: Colors.white70)),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 48),
+                            const Expanded(
+                              child: Center(
+                                child: Text('LIVE RADIO',
+                                    style: TextStyle(
+                                        letterSpacing: 3,
+                                        fontSize: 12,
+                                        color: Colors.white70)),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.queue_music_rounded),
+                              onPressed: () => setState(() => _showList = true),
+                            ),
+                          ],
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.queue_music_rounded),
-                        onPressed: () => setState(() => _showList = true),
+                      Expanded(
+                        child: isLandscape
+                            ? _buildLandscapeLayout(st)
+                            : _buildPortraitLayout(st),
                       ),
                     ],
                   ),
                 ),
-                Expanded(
-                  child: isLandscape
-                      ? _buildLandscapeLayout(st)
-                      : _buildPortraitLayout(st),
-                ),
-              ],
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: !_showList,
-              child: AnimatedSlide(
-                offset: _showList ? Offset.zero : const Offset(0, 1),
-                duration: const Duration(milliseconds: 380),
-                curve: Curves.easeOutCubic,
-                child: Container(
-                  color: const Color(0xFF121212),
-                  child: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 28),
-                          const Text('Select Station',
-                              style: TextStyle(
-                                  fontSize: 28, fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 4),
-                          const Text('Choose a radio station to start listening',
-                              style: TextStyle(color: Colors.white54)),
-                          const SizedBox(height: 24),
-                          Expanded(
-                            child: ListView.separated(
-                              itemCount: stations.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 14),
-                              itemBuilder: (context, i) => _StationTile(
-                                station: stations[i],
-                                selected: i == _index,
-                                onTap: () => _select(i, fromList: true),
-                              ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: !_showList,
+                    child: AnimatedSlide(
+                      offset: _showList ? Offset.zero : const Offset(0, 1),
+                      duration: const Duration(milliseconds: 380),
+                      curve: Curves.easeOutCubic,
+                      child: Container(
+                        color: const Color(0xFF121212),
+                        child: SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 28),
+                                const Text('Select Station',
+                                    style: TextStyle(
+                                        fontSize: 28, fontWeight: FontWeight.w800)),
+                                const SizedBox(height: 4),
+                                const Text('Choose a radio station to start listening',
+                                    style: TextStyle(color: Colors.white54)),
+                                const SizedBox(height: 24),
+                                Expanded(
+                                  child: ListView.separated(
+                                    itemCount: stations.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: 14),
+                                    itemBuilder: (context, i) => _StationTile(
+                                      station: stations[i],
+                                      selected: i == _index,
+                                      onTap: () => _select(i, fromList: true),
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      setState(() => _showList = false),
+                                  child: const Text('Back to player'),
+                                ),
+                              ],
                             ),
                           ),
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => _showList = false),
-                            child: const Text('Back to player'),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -393,36 +401,38 @@ class _PlayerPageState extends State<PlayerPage> {
   Widget _buildLandscapeLayout(Station st) {
     return Row(
       children: [
-        // Left side: Card aligned to the center of its half
         Expanded(
           flex: 5,
-          child: Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragEnd: _onSwipe,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 350),
-                transitionBuilder: (child, anim) {
-                  final incoming = child.key == ValueKey(_index);
-                  final begin =
-                      Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
-                  return SlideTransition(
-                    position:
-                        Tween<Offset>(begin: begin, end: Offset.zero)
-                            .animate(anim),
-                    child: FadeTransition(opacity: anim, child: child),
-                  );
-                },
-                child: _StationCard(
-                  key: ValueKey(_index),
-                  station: st,
-                  isLandscape: true,
+          child: Align(
+            alignment: Alignment.centerLeft, 
+            child: Padding(
+              padding: const EdgeInsets.only(left: 40.0), 
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragEnd: _onSwipe,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, anim) {
+                    final incoming = child.key == ValueKey(_index);
+                    final begin =
+                        Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                    return SlideTransition(
+                      position:
+                          Tween<Offset>(begin: begin, end: Offset.zero)
+                              .animate(anim),
+                      child: FadeTransition(opacity: anim, child: child),
+                    );
+                  },
+                  child: _StationCard(
+                    key: ValueKey(_index),
+                    station: st,
+                    isLandscape: true,
+                  ),
                 ),
               ),
             ),
           ),
         ),
-        // Right side: Controls
         Expanded(
           flex: 5,
           child: Column(
@@ -530,12 +540,12 @@ class _StationCard extends StatelessWidget {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    // Make the card perfectly square
-    final size = isLandscape ? screenHeight * 0.65 : screenWidth * 0.78;
+    final w = isLandscape ? screenHeight * 0.6 : screenWidth * 0.78;
+    final h = isLandscape ? screenHeight * 0.7 : w * 1.2;
 
     return Container(
-      width: size,
-      height: size, // Square aspect ratio
+      width: w,
+      height: h,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
