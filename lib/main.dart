@@ -250,13 +250,14 @@ class _PlayerPageState extends State<PlayerPage> {
       child: CallbackShortcuts(
         bindings: {
           // Map TV Remote directional pad to station changes
-          LogicalKeyboardKey.arrowLeft: () {
+          // FIXED: Wrapped LogicalKeyboardKey in SingleActivator
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
             if (!_showList) _select(_index - 1);
           },
-          LogicalKeyboardKey.arrowRight: () {
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () {
             if (!_showList) _select(_index + 1);
           },
-          LogicalKeyboardKey.mediaPlayPause: _toggle,
+          const SingleActivator(LogicalKeyboardKey.mediaPlayPause): _toggle,
         },
         child: Focus(
           autofocus: true,
