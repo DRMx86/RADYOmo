@@ -9,13 +9,18 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Request notification permission for Android 13+
-  await Permission.notification.request();
+  try {
+    await Permission.notification.request();
+  } catch (_) {
+    // Some TV boxes have no notification permission dialog; ignore.
+  }
 
   try {
     await JustAudioBackground.init(
       androidNotificationChannelId: 'com.phradio.channel.audio',
       androidNotificationChannelName: 'Radio playback',
       androidNotificationOngoing: true,
+      androidNotificationIcon: 'drawable/ic_notification',
     );
   } catch (_) {
     // App still opens even if background service fails to start.
@@ -45,7 +50,7 @@ class RadioApp extends StatelessWidget {
   const RadioApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'PH Radio',
+        title: 'RADYOmo',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           brightness: Brightness.dark,
@@ -76,6 +81,11 @@ class _PlayerPageState extends State<PlayerPage> {
     _player = AudioPlayer(
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     );
+
+    // Wrap-around playlist: keeps previous / play-pause / next all visible in
+    // the swipe-down notification (they are hidden at the first/last station
+    // otherwise). Does not change the audio streams or output.
+    _player.setLoopMode(LoopMode.all);
 
     _setupAudioSources();
     _setupVolumeListener();
@@ -246,7 +256,7 @@ class _PlayerPageState extends State<PlayerPage> {
         setState(() => _showList = true);
       },
       child: Focus(
-        autofocus: true,
+        // Key events from any focused child bubble up here (TV remote).
         onKeyEvent: (node, event) {
           // Global Media Play/Pause key from TV Remote
           if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.mediaPlayPause) {
@@ -269,7 +279,9 @@ class _PlayerPageState extends State<PlayerPage> {
                   ),
                 ),
               ),
-              SafeArea(
+              ExcludeFocus(
+                excluding: _showList,
+                child: SafeArea(
                 child: Column(
                   children: [
                     Padding(
@@ -301,8 +313,11 @@ class _PlayerPageState extends State<PlayerPage> {
                   ],
                 ),
               ),
+              ),
               Positioned.fill(
-                child: IgnorePointer(
+                child: ExcludeFocus(
+                  excluding: !_showList,
+                  child: IgnorePointer(
                   ignoring: !_showList,
                   child: AnimatedSlide(
                     offset: _showList ? Offset.zero : const Offset(0, 1),
@@ -332,6 +347,7 @@ class _PlayerPageState extends State<PlayerPage> {
                                   itemBuilder: (context, i) => _StationTile(
                                     station: stations[i],
                                     selected: i == _index,
+                                    autofocus: i == _index,
                                     onTap: () => _select(i, fromList: true),
                                   ),
                                 ),
@@ -347,6 +363,7 @@ class _PlayerPageState extends State<PlayerPage> {
                       ),
                     ),
                   ),
+                ),
                 ),
               ),
             ],
@@ -504,20 +521,34 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 }
 
-class _StationTile extends StatelessWidget {
+class _StationTile extends StatefulWidget {
   final Station station;
   final bool selected;
+  final bool autofocus;
   final VoidCallback onTap;
   const _StationTile(
-      {required this.station, required this.selected, required this.onTap});
+      {required this.station,
+      required this.selected,
+      required this.onTap,
+      this.autofocus = false});
+
+  @override
+  State<_StationTile> createState() => _StationTileState();
+}
+
+class _StationTileState extends State<_StationTile> {
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
+    final station = widget.station;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
+        autofocus: widget.autofocus,
+        onFocusChange: (f) => setState(() => _focused = f),
+        onTap: widget.onTap,
         child: Ink(
           height: 104,
           decoration: BoxDecoration(
@@ -527,9 +558,11 @@ class _StationTile extends StatelessWidget {
               end: Alignment.centerRight,
               colors: [station.color, station.color.withOpacity(0.5)],
             ),
-            border: selected
-                ? Border.all(color: Colors.white, width: 2)
-                : null,
+            border: _focused
+                ? Border.all(color: Colors.white, width: 4)
+                : widget.selected
+                    ? Border.all(color: Colors.white, width: 2)
+                    : null,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 22),
           child: Row(
