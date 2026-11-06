@@ -198,9 +198,14 @@ class _PlayerPageState extends State<PlayerPage> {
                 onChanged: (v) async {
                   setState(() => _volume = v);
                   // Hide system UI when dragging the in‑app slider.
-                  // Physical volume buttons will still show the system UI.
-                  await VolumeController.instance.updateShowSystemUI(false);
-                  VolumeController.instance.setVolume(v);
+                  // This is a property, not a method.
+                  VolumeController.instance.showSystemUI = false;
+                  await VolumeController.instance.setVolume(v);
+                },
+                onChangeEnd: (v) {
+                  // Optional: restore the property after dragging ends
+                  // so other system volume changes can show the UI.
+                  VolumeController.instance.showSystemUI = true;
                 },
               ),
             ),
