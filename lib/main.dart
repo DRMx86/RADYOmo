@@ -16,11 +16,17 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.phradio.channel.audio',
       androidNotificationChannelName: 'Radio playback',
       androidNotificationOngoing: true,
+      // Keeps the notification and its controls active even when paused
+      androidStopForegroundOnPause: false, 
     );
   } catch (_) {
     // App still opens even if background service fails to start.
   }
+  
+  // Hide system UI (nav bars) for immersive experience
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
+  
   runApp(const RadioApp());
 }
 
@@ -108,7 +114,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _setupAudioSources() async {
     try {
-      // Using ConcatenatingAudioSource for just_audio 0.9.46
+      // Using ConcatenatingAudioSource to enable Next/Prev buttons in notification
       final playlist = ConcatenatingAudioSource(
         children: stations
             .map((s) => AudioSource.uri(
@@ -133,6 +139,8 @@ class _PlayerPageState extends State<PlayerPage> {
   void dispose() {
     VolumeController.instance.removeListener();
     _player.dispose();
+    // Restore system UI when app closes
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
@@ -189,7 +197,8 @@ class _PlayerPageState extends State<PlayerPage> {
                 value: _volume,
                 onChanged: (v) {
                   setState(() => _volume = v);
-                  VolumeController.instance.setVolume(v);
+                  // showSystemUI: false prevents the Android volume bar from popping up
+                  VolumeController.instance.setVolume(v, showSystemUI: false);
                 },
               ),
             ),
@@ -377,38 +386,36 @@ class _PlayerPageState extends State<PlayerPage> {
   Widget _buildLandscapeLayout(Station st) {
     return Row(
       children: [
+        // Left side: Card aligned to the center of its half
         Expanded(
           flex: 5,
-          child: Align(
-            alignment: Alignment.centerLeft, 
-            child: Padding(
-              padding: const EdgeInsets.only(left: 40.0), 
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragEnd: _onSwipe,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
-                  transitionBuilder: (child, anim) {
-                    final incoming = child.key == ValueKey(_index);
-                    final begin =
-                        Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
-                    return SlideTransition(
-                      position:
-                          Tween<Offset>(begin: begin, end: Offset.zero)
-                              .animate(anim),
-                      child: FadeTransition(opacity: anim, child: child),
-                    );
-                  },
-                  child: _StationCard(
-                    key: ValueKey(_index),
-                    station: st,
-                    isLandscape: true,
-                  ),
+          child: Center(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragEnd: _onSwipe,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, anim) {
+                  final incoming = child.key == ValueKey(_index);
+                  final begin =
+                      Offset(incoming ? _dir.toDouble() : -_dir.toDouble(), 0);
+                  return SlideTransition(
+                    position:
+                        Tween<Offset>(begin: begin, end: Offset.zero)
+                            .animate(anim),
+                    child: FadeTransition(opacity: anim, child: child),
+                  );
+                },
+                child: _StationCard(
+                  key: ValueKey(_index),
+                  station: st,
+                  isLandscape: true,
                 ),
               ),
             ),
           ),
         ),
+        // Right side: Controls
         Expanded(
           flex: 5,
           child: Column(
@@ -516,12 +523,12 @@ class _StationCard extends StatelessWidget {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    final w = isLandscape ? screenHeight * 0.6 : screenWidth * 0.78;
-    final h = isLandscape ? screenHeight * 0.7 : w * 1.2;
+    // Make the card perfectly square
+    final size = isLandscape ? screenHeight * 0.65 : screenWidth * 0.78;
 
     return Container(
-      width: w,
-      height: h,
+      width: size,
+      height: size, // Square aspect ratio
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
