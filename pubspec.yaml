@@ -1,20 +1,24 @@
-name: ph_radio
-description: Simple radio player with background playback.
-publish_to: "none"
+name: radyomo
+description: A new Flutter project.
+publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.3.0 <4.0.0"
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  just_audio: ^0.9.40
+  cupertino_icons: ^1.0.8
+  just_audio: ^0.9.46
   just_audio_background: ^0.0.1-beta.13
+  volume_controller: ^2.0.6
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
