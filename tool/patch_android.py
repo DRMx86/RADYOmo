@@ -11,8 +11,7 @@ def patch_manifest():
 
     content = manifest_path.read_text()
 
-    # 1. Change the app name (Display label on the home screen)
-    # Change 'RADYOmo' to whatever you want the app to be called.
+    # 1. Change the app name
     content = re.sub(r'android:label="[^"]*"', 'android:label="RADYOmo"', content)
 
     # 2. Add all required permissions safely BEFORE the <application> tag
@@ -23,6 +22,7 @@ def patch_manifest():
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 """
     if 'android.permission.WAKE_LOCK' not in content:
         content = content.replace('<application', permissions + '\n    <application', 1)
@@ -61,7 +61,6 @@ def patch_manifest():
     print("Successfully patched AndroidManifest.xml")
 
 def patch_main_activity():
-    # Find MainActivity.kt
     main_activity_paths = list(pathlib.Path("android").rglob("MainActivity.kt"))
     if not main_activity_paths:
         return
@@ -69,12 +68,10 @@ def patch_main_activity():
     for activity_path in main_activity_paths:
         content = activity_path.read_text()
         
-        # Add import for AudioServiceActivity
         import_statement = "import com.ryanheise.audioservice.AudioServiceActivity"
         if import_statement not in content:
             content = re.sub(r'(package\s+[^\n]+\n)', r'\1\n' + import_statement + '\n', content, count=1)
 
-        # Change FlutterActivity to AudioServiceActivity safely using Regex
         content = re.sub(
             r'class\s+MainActivity\s*:\s*FlutterActivity\s*\(\s*\)', 
             'class MainActivity: AudioServiceActivity()', 
