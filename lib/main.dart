@@ -190,7 +190,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 value: _volume,
                 onChanged: (v) {
                   setState(() => _volume = v);
-                  // Controls physical system volume instead of just app volume
+                  // Controls physical system volume
                   VolumeController.instance.setVolume(v);
                 },
               ),
