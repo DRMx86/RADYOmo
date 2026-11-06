@@ -21,7 +21,6 @@ jobs:
           channel: stable
           cache: true
 
-      # Generates the android/ folder (not stored in the repo)
       - name: Generate platform folders
         run: flutter create --platforms=android --org com.radyomo --project-name radyomo .
 
@@ -36,5 +35,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ph-radio-apk
-          # FIXED: Changed from radyomo.apk to the default Flutter output name
           path: build/app/outputs/flutter-apk/app-release.apk
