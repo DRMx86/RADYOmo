@@ -245,114 +245,111 @@ class _PlayerPageState extends State<PlayerPage> {
         if (didPop) return;
         setState(() => _showList = true);
       },
-      child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
-            if (!_showList) _select(_index - 1);
-          },
-          const SingleActivator(LogicalKeyboardKey.arrowRight): () {
-            if (!_showList) _select(_index + 1);
-          },
-          const SingleActivator(LogicalKeyboardKey.mediaPlayPause): _toggle,
+      child: Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          // Global Media Play/Pause key from TV Remote
+          if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.mediaPlayPause) {
+            _toggle();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
         },
-        child: Focus(
-          autofocus: true,
-          child: Scaffold(
-            body: Stack(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 500),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [st.color.withOpacity(0.6), const Color(0xFF121212)],
-                      stops: const [0, 0.7],
+        child: Scaffold(
+          body: Stack(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 500),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [st.color.withOpacity(0.6), const Color(0xFF121212)],
+                    stops: const [0, 0.7],
+                  ),
+                ),
+              ),
+              SafeArea(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 48),
+                          const Expanded(
+                            child: Center(
+                              child: Text('LIVE RADIO',
+                                  style: TextStyle(
+                                      letterSpacing: 3,
+                                      fontSize: 12,
+                                      color: Colors.white70)),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.queue_music_rounded),
+                            onPressed: () => setState(() => _showList = true),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      child: isLandscape
+                          ? _buildLandscapeLayout(st)
+                          : _buildPortraitLayout(st),
+                    ),
+                  ],
                 ),
-                SafeArea(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 48),
-                            const Expanded(
-                              child: Center(
-                                child: Text('LIVE RADIO',
-                                    style: TextStyle(
-                                        letterSpacing: 3,
-                                        fontSize: 12,
-                                        color: Colors.white70)),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.queue_music_rounded),
-                              onPressed: () => setState(() => _showList = true),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: isLandscape
-                            ? _buildLandscapeLayout(st)
-                            : _buildPortraitLayout(st),
-                      ),
-                    ],
-                  ),
-                ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: !_showList,
-                    child: AnimatedSlide(
-                      offset: _showList ? Offset.zero : const Offset(0, 1),
-                      duration: const Duration(milliseconds: 380),
-                      curve: Curves.easeOutCubic,
-                      child: Container(
-                        color: const Color(0xFF121212),
-                        child: SafeArea(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 28),
-                                const Text('Select Station',
-                                    style: TextStyle(
-                                        fontSize: 28, fontWeight: FontWeight.w800)),
-                                const SizedBox(height: 4),
-                                const Text('Choose a radio station to start listening',
-                                    style: TextStyle(color: Colors.white54)),
-                                const SizedBox(height: 24),
-                                Expanded(
-                                  child: ListView.separated(
-                                    itemCount: stations.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: 14),
-                                    itemBuilder: (context, i) => _StationTile(
-                                      station: stations[i],
-                                      selected: i == _index,
-                                      onTap: () => _select(i, fromList: true),
-                                    ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_showList,
+                  child: AnimatedSlide(
+                    offset: _showList ? Offset.zero : const Offset(0, 1),
+                    duration: const Duration(milliseconds: 380),
+                    curve: Curves.easeOutCubic,
+                    child: Container(
+                      color: const Color(0xFF121212),
+                      child: SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 28),
+                              const Text('Select Station',
+                                  style: TextStyle(
+                                      fontSize: 28, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 4),
+                              const Text('Choose a radio station to start listening',
+                                  style: TextStyle(color: Colors.white54)),
+                              const SizedBox(height: 24),
+                              Expanded(
+                                child: ListView.separated(
+                                  itemCount: stations.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 14),
+                                  itemBuilder: (context, i) => _StationTile(
+                                    station: stations[i],
+                                    selected: i == _index,
+                                    onTap: () => _select(i, fromList: true),
                                   ),
                                 ),
-                                TextButton(
-                                  onPressed: () =>
-                                      setState(() => _showList = false),
-                                  child: const Text('Back to player'),
-                                ),
-                              ],
-                            ),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    setState(() => _showList = false),
+                                child: const Text('Back to player'),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -380,7 +377,27 @@ class _PlayerPageState extends State<PlayerPage> {
                     child: FadeTransition(opacity: anim, child: child),
                   );
                 },
-                child: _StationCard(key: ValueKey(_index), station: st),
+                child: Focus(
+                  onKeyEvent: (node, event) {
+                    if (event is KeyDownEvent) {
+                      if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                        _select(_index - 1);
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                        _select(_index + 1);
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.select ||
+                          event.logicalKey == LogicalKeyboardKey.enter) {
+                        _toggle();
+                        return KeyEventResult.handled;
+                      }
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: _StationCard(key: ValueKey(_index), station: st),
+                ),
               ),
             ),
           ),
@@ -420,10 +437,30 @@ class _PlayerPageState extends State<PlayerPage> {
                       child: FadeTransition(opacity: anim, child: child),
                     );
                   },
-                  child: _StationCard(
-                    key: ValueKey(_index),
-                    station: st,
-                    isLandscape: true,
+                  child: Focus(
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent) {
+                        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                          _select(_index - 1);
+                          return KeyEventResult.handled;
+                        }
+                        if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                          _select(_index + 1);
+                          return KeyEventResult.handled;
+                        }
+                        if (event.logicalKey == LogicalKeyboardKey.select ||
+                            event.logicalKey == LogicalKeyboardKey.enter) {
+                          _toggle();
+                          return KeyEventResult.handled;
+                        }
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: _StationCard(
+                      key: ValueKey(_index),
+                      station: st,
+                      isLandscape: true,
+                    ),
                   ),
                 ),
               ),
@@ -537,15 +574,14 @@ class _StationCard extends StatelessWidget {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
+    // ORIGINAL DIMENSIONS (RECTANGLE)
     final w = isLandscape ? screenHeight * 0.6 : screenWidth * 0.78;
-    // Changed h to equal w to make it a perfect square
-    final h = w; 
+    final h = isLandscape ? screenHeight * 0.7 : w * 1.2;
 
     return Container(
       width: w,
       height: h,
       decoration: BoxDecoration(
-        // This keeps the rounded corners
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -585,7 +621,7 @@ class _StationCard extends StatelessWidget {
   }
 }
 
-class _PlayButton extends StatelessWidget {
+class _PlayButton extends StatefulWidget {
   final bool playing;
   final bool busy;
   final VoidCallback onTap;
@@ -593,24 +629,44 @@ class _PlayButton extends StatelessWidget {
       {required this.playing, required this.busy, required this.onTap});
 
   @override
+  State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _PlayButtonState extends State<_PlayButton> {
+  bool _hasFocus = false;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 78,
-        height: 78,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1DB954),
-          shape: BoxShape.circle,
+    return Focus(
+      onFocusChange: (focus) => setState(() => _hasFocus = focus),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          widget.onTap();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          width: 78,
+          height: 78,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1DB954),
+            shape: BoxShape.circle,
+            border: _hasFocus ? Border.all(color: Colors.white, width: 4) : null,
+          ),
+          child: widget.busy
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 3, color: Colors.black),
+                )
+              : Icon(widget.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  size: 46, color: Colors.black),
         ),
-        child: busy
-            ? const Padding(
-                padding: EdgeInsets.all(24),
-                child: CircularProgressIndicator(
-                    strokeWidth: 3, color: Colors.black),
-              )
-            : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                size: 46, color: Colors.black),
       ),
     );
   }
