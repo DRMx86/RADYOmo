@@ -108,6 +108,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _setupAudioSources() async {
     try {
+      // Using ConcatenatingAudioSource for just_audio 0.9.46
       final playlist = ConcatenatingAudioSource(
         children: stations
             .map((s) => AudioSource.uri(
@@ -168,8 +169,6 @@ class _PlayerPageState extends State<PlayerPage> {
     if (v > 300 && _index > 0) _select(_index - 1);
   }
 
-  // --- UI COMPONENTS ---
-
   Widget _buildVolumeSlider() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
@@ -190,7 +189,6 @@ class _PlayerPageState extends State<PlayerPage> {
                 value: _volume,
                 onChanged: (v) {
                   setState(() => _volume = v);
-                  // Controls physical system volume
                   VolumeController.instance.setVolume(v);
                 },
               ),
@@ -379,13 +377,12 @@ class _PlayerPageState extends State<PlayerPage> {
   Widget _buildLandscapeLayout(Station st) {
     return Row(
       children: [
-        // Left side: Card aligned to center-left
         Expanded(
           flex: 5,
           child: Align(
             alignment: Alignment.centerLeft, 
             child: Padding(
-              padding: const EdgeInsets.only(left: 40.0), // "Not too left"
+              padding: const EdgeInsets.only(left: 40.0), 
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onHorizontalDragEnd: _onSwipe,
@@ -412,7 +409,6 @@ class _PlayerPageState extends State<PlayerPage> {
             ),
           ),
         ),
-        // Right side: Controls
         Expanded(
           flex: 5,
           child: Column(
