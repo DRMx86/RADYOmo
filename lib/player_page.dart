@@ -193,7 +193,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   /// remote key press puts it back on a button instead of doing nothing.
   bool _guardFocus(KeyEvent e) {
     if (e is! KeyDownEvent || _hasFocusedControl) return false;
-    const keys = {
+    final keys = {
       LogicalKeyboardKey.arrowUp,
       LogicalKeyboardKey.arrowDown,
       LogicalKeyboardKey.arrowLeft,
