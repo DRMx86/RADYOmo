@@ -105,17 +105,6 @@
   .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--fg-faint); transition: width .25s, background .25s; }
   .dot.on { width: 20px; background: #fff; }
 
-  .volume { display: flex; align-items: center; gap: 8px; width: min(312px, 100%); padding: 0 12px; }
-  .volume svg { width: 20px; height: 20px; color: var(--fg-mute); flex: none; }
-  .volume[hidden] { display: none; }
-  input[type="range"] {
-    -webkit-appearance: none; appearance: none; flex: 1; height: 28px; background: transparent; margin: 0;
-  }
-  input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--fg-faint); }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-top: -5.5px;
-  }
-
   .transport { display: flex; align-items: center; gap: 16px; }
   .transport .skip { width: 64px; height: 64px; }
   .transport .skip svg { width: 42px; height: 42px; }
@@ -131,7 +120,6 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .ios-hint { font-size: 12px; color: var(--fg-mute); text-align: center; }
 
   /* Station list sheet */
   .sheet {
@@ -167,7 +155,11 @@
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-  /* Landscape: card left, controls right */
+  /* Landscape: card left, controls right. Always on for Safari on macOS, and on phones turned sideways. */
+  html.mac .stage { flex-direction: row; }
+  html.mac .art-zone { flex: 1; }
+  html.mac .controls { flex: 1; justify-content: center; padding: 0 0 16px; gap: 16px; }
+  html.mac .card { --s: min(78cqw, 90cqh); }
   @media (orientation: landscape) and (max-height: 520px) {
     .stage { flex-direction: row; }
     .art-zone { flex: 1; }
@@ -195,11 +187,6 @@
     <div class="art-zone" id="art-zone"><div class="card" id="card"></div></div>
     <div class="controls">
       <div class="dots" id="dots"></div>
-      <div class="volume" id="volume">
-        <svg viewBox="0 0 24 24"><path d="M18.5 12A4.5 4.5 0 0 0 16 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
-        <input type="range" id="vol" min="0" max="1" step="0.01" value="1" aria-label="Volume">
-        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
-      </div>
       <div class="transport">
         <button class="icon-btn skip" id="prev" aria-label="Previous station">
           <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
@@ -209,7 +196,6 @@
           <svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
         </button>
       </div>
-      <div class="ios-hint" id="ios-hint" hidden>This station does not allow in-app volume. Use your device volume buttons.</div>
     </div>
   </div>
 </main>
@@ -229,6 +215,14 @@
 (function () {
   "use strict";
 
+  // Safari on macOS always uses the landscape layout (iPadOS also reports MacIntel, but has touch points).
+  (function () {
+    var ua = navigator.userAgent || "";
+    var isMac = /Macintosh/.test(ua) && !(navigator.maxTouchPoints > 1);
+    var isSafari = /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Firefox/.test(ua);
+    if (isMac && isSafari) document.documentElement.classList.add("mac");
+  })();
+
   // Same stations as lib/stations.dart in the RADYOmo repo.
   var STATIONS = [
     { name: "Monster Radio", freq: "RX 93.1", url: "https://in-icecast.eradioportal.com:8443/monsterrrx", color: "#E53935" },
@@ -242,20 +236,12 @@
   var ICON_PLAYCIRCLE = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>';
 
   var $ = function (id) { return document.getElementById(id); };
-  var card = $("card"), dotsEl = $("dots"), tilesEl = $("tiles"), volEl = $("vol");
+  var card = $("card"), dotsEl = $("dots"), tilesEl = $("tiles");
   var playBtn = $("play"), sheet = $("sheet"), player = $("player"), toastEl = $("toast");
 
   var index = 0, dir = 1, busy = false, listOpen = true, toastTimer = 0, loadedIndex = -1;
 
-  // Volume model. Desktop Safari lets the page set audio.volume directly.
-  // iOS Safari keeps audio.volume read-only, so there the level is applied through a
-  // Web Audio gain node, which only works when the stream allows cross-origin audio.
-  var audio = null, canSetVol = false, vol = 1;
-  var gainMode = false, gainFailed = false, ctx = null, gainNode = null, analyser = null, silenceTimer = 0;
-  try {
-    var sv = parseFloat(localStorage.getItem("radyomo.volume"));
-    if (sv >= 0 && sv <= 1) vol = sv;
-  } catch (e) {}
+  var audio = null;
 
   try {
     var saved = parseInt(localStorage.getItem("radyomo.station"), 10);
@@ -372,8 +358,6 @@
   }
 
   function play() {
-    // A saved level below 100% on iOS needs the gain node before the first sound.
-    if (!canSetVol && !gainMode && !gainFailed && vol < 0.99) enableGain();
     if (loadedIndex !== index) load();
     busy = true; renderPlay();
     var p = audio.play();
@@ -408,110 +392,34 @@
     select((index + delta + n) % n, false);
   }
 
-  // ---------- audio element lifecycle ----------
+  // ---------- audio element ----------
   function bindAudio(a) {
-    var live = function (fn) { return function () { if (a === audio) fn(); }; };
-    a.addEventListener("playing", live(function () {
+    a.addEventListener("playing", function () {
       busy = false; renderPlay();
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
-      if (gainMode) { clearTimeout(silenceTimer); silenceTimer = setTimeout(checkSilence, 2500); }
-    }));
-    a.addEventListener("pause", live(function () {
+    });
+    a.addEventListener("pause", function () {
       busy = false; renderPlay();
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
-    }));
-    a.addEventListener("waiting", live(function () { if (!a.paused) { busy = true; renderPlay(); } }));
-    a.addEventListener("stalled", live(function () { if (!a.paused) { busy = true; renderPlay(); } }));
-    a.addEventListener("error", live(function () {
+    });
+    a.addEventListener("waiting", function () { if (!a.paused) { busy = true; renderPlay(); } });
+    a.addEventListener("stalled", function () { if (!a.paused) { busy = true; renderPlay(); } });
+    a.addEventListener("error", function () {
       busy = false; renderPlay();
-      if (!a.getAttribute("src")) return;
-      if (gainMode) { fallbackFromGain(); return; }
-      toast("Playback error. Check your connection.");
-    }));
-    // Keeps the slider in step when the browser changes the element volume itself.
-    a.addEventListener("volumechange", live(function () {
-      if (canSetVol && !gainMode) { vol = a.volume; volEl.value = String(vol); }
-    }));
+      if (a.getAttribute("src")) toast("Playback error. Check your connection.");
+    });
   }
 
-  function createAudio(cors) {
+  function createAudio() {
     var a = document.createElement("audio");
     a.setAttribute("playsinline", "");
     a.setAttribute("webkit-playsinline", "");
     a.preload = "none";
-    if (cors) a.crossOrigin = "anonymous";
     bindAudio(a);
     document.body.appendChild(a);
     return a;
   }
 
-  function swapAudio(a) {
-    var old = audio;
-    audio = a;
-    loadedIndex = -1;
-    if (old) {
-      try { old.pause(); old.removeAttribute("src"); old.load(); } catch (e) {}
-      old.remove();
-    }
-  }
-
-  // ---------- volume ----------
-  function applyVolume() {
-    if (gainMode && gainNode) gainNode.gain.value = vol;
-    else if (canSetVol) audio.volume = vol;
-  }
-
-  function showNoVolume() {
-    $("volume").hidden = true;
-    $("ios-hint").hidden = false;
-  }
-
-  function enableGain() {
-    var AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) { gainFailed = true; showNoVolume(); return false; }
-    try {
-      ctx = ctx || new AC();
-      var a = createAudio(true);
-      var src = ctx.createMediaElementSource(a);
-      gainNode = ctx.createGain();
-      gainNode.gain.value = vol;
-      analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      src.connect(gainNode);
-      gainNode.connect(analyser);
-      analyser.connect(ctx.destination);
-      swapAudio(a);
-      gainMode = true;
-      if (ctx.state === "suspended") ctx.resume();
-      return true;
-    } catch (e) {
-      fallbackFromGain();
-      return false;
-    }
-  }
-
-  // The stream refused cross-origin audio or came out silent: go back to a plain element.
-  function fallbackFromGain() {
-    clearTimeout(silenceTimer);
-    gainMode = false;
-    gainFailed = true;
-    swapAudio(createAudio(false));
-    showNoVolume();
-    toast("This station does not allow in-app volume.");
-    play();
-  }
-
-  function checkSilence() {
-    if (!gainMode || !audio || audio.paused || vol < 0.05 || !analyser) return;
-    var buf = new Uint8Array(analyser.fftSize), quiet = true;
-    analyser.getByteTimeDomainData(buf);
-    for (var i = 0; i < buf.length; i++) if (buf[i] !== 128) { quiet = false; break; }
-    if (quiet) fallbackFromGain();
-  }
-
-  document.addEventListener("visibilitychange", function () {
-    if (ctx && ctx.state === "suspended" && audio && !audio.paused) ctx.resume();
-  });
 
   // ---------- swipe between stations ----------
   (function () {
@@ -528,21 +436,7 @@
     }, { passive: true });
   })();
 
-  // ---------- volume (iOS Safari ignores audio.volume, so hide the slider there) ----------
-  audio = createAudio(false);
-  try { audio.volume = 0.5; canSetVol = Math.abs(audio.volume - 0.5) < 0.001; } catch (e) {}
-  volEl.value = String(vol);
-  if (canSetVol) audio.volume = vol;
-
-  volEl.addEventListener("input", function (e) {
-    vol = parseFloat(e.target.value);
-    try { localStorage.setItem("radyomo.volume", String(vol)); } catch (err) {}
-    if (!canSetVol && !gainMode && !gainFailed) {
-      var wasPlaying = !audio.paused;
-      if (enableGain() && wasPlaying) play();
-    }
-    applyVolume();
-  });
+  audio = createAudio();
 
   // ---------- wiring ----------
   playBtn.addEventListener("click", toggle);
