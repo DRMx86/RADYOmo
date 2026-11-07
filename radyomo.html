@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>RADYOmo</title>
+<meta name="theme-color" content="#121212">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RADYOmo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" id="touch-icon" href="">
+<style>
+  /* Layout: full-screen player. Portrait stacks card over controls, landscape puts them side by side.
+     Station list is a sheet that slides up over the player, like the Android app. */
+  :root {
+    --bg: #121212;
+    --fg: #ffffff;
+    --fg-dim: rgba(255, 255, 255, .7);
+    --fg-mute: rgba(255, 255, 255, .54);
+    --fg-faint: rgba(255, 255, 255, .24);
+    --green: #1db954;
+    --c: #e53935;
+    color-scheme: dark;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    --font-display: "SF Pro Rounded", ui-rounded, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  }
+  @property --c { syntax: "<color>"; inherits: true; initial-value: #e53935; }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.4 var(--font);
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+  svg { display: block; fill: currentColor; }
+
+  .backdrop {
+    position: fixed; inset: 0; z-index: 0;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--c) 60%, transparent), var(--bg) 70%);
+    transition: --c .5s ease;
+  }
+  @supports not (background: color-mix(in srgb, red 50%, transparent)) {
+    .backdrop { background: linear-gradient(to bottom, var(--c), var(--bg) 70%); opacity: .7; }
+  }
+
+  .player, .sheet {
+    position: fixed; inset: 0; z-index: 1;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .player { display: flex; flex-direction: column; }
+
+  .topbar { display: flex; align-items: center; height: 56px; flex: none; }
+  .topbar .spacer, .topbar .icon-btn { width: 48px; height: 48px; }
+  .topbar .title {
+    flex: 1; text-align: center; font-size: 12px; letter-spacing: 3px; color: var(--fg-dim);
+  }
+  .icon-btn { display: grid; place-items: center; border-radius: 50%; color: var(--fg); }
+  .icon-btn:active { background: rgba(255,255,255,.12); }
+
+  .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .art-zone {
+    flex: 1; min-height: 0; display: grid; place-items: center;
+    touch-action: pan-y; container-type: size;
+  }
+  .controls {
+    flex: none; display: flex; flex-direction: column; align-items: center; gap: 24px;
+    padding: 16px 0 32px;
+  }
+
+  .card {
+    --s: min(78cqw, 78cqh);
+    width: var(--s); height: var(--s);
+    border-radius: calc(var(--s) * .09);
+    background: linear-gradient(135deg, var(--c), color-mix(in srgb, var(--c) 55%, transparent));
+    box-shadow: 0 calc(var(--s) * .05) calc(var(--s) * .1) color-mix(in srgb, var(--c) 45%, transparent);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: calc(var(--s) * .08); text-align: center;
+  }
+  .card svg { width: calc(var(--s) * .2); height: calc(var(--s) * .2); color: var(--fg-dim); margin-bottom: calc(var(--s) * .06); }
+  .card .name {
+    font: 800 calc(var(--s) * .11)/1.1 var(--font-display); max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card .freq { font-size: calc(var(--s) * .065); font-weight: 500; margin-top: calc(var(--s) * .02); }
+  .card.in-next { animation: in-next .35s ease both; }
+  .card.in-prev { animation: in-prev .35s ease both; }
+  @keyframes in-next { from { opacity: 0; transform: translateX(40%); } }
+  @keyframes in-prev { from { opacity: 0; transform: translateX(-40%); } }
+  @supports not (width: 1cqw) { .card { --s: min(78vw, 50vh); } }
+
+  .dots { display: flex; gap: 8px; align-items: center; height: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--fg-faint); transition: width .25s, background .25s; }
+  .dot.on { width: 20px; background: #fff; }
+
+  .volume { display: flex; align-items: center; gap: 8px; width: min(312px, 100%); padding: 0 12px; }
+  .volume svg { width: 20px; height: 20px; color: var(--fg-mute); flex: none; }
+  .volume[hidden] { display: none; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; flex: 1; height: 28px; background: transparent; margin: 0;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--fg-faint); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-top: -5.5px;
+  }
+
+  .transport { display: flex; align-items: center; gap: 16px; }
+  .transport .skip { width: 64px; height: 64px; }
+  .transport .skip svg { width: 42px; height: 42px; }
+  .play {
+    width: 78px; height: 78px; border-radius: 50%; background: var(--green); color: #000;
+    display: grid; place-items: center;
+  }
+  .play:active { transform: scale(.96); }
+  .play svg { width: 46px; height: 46px; }
+  .spinner {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 3px solid rgba(0,0,0,.25); border-top-color: #000; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .ios-hint { font-size: 12px; color: var(--fg-mute); text-align: center; }
+
+  /* Station list sheet */
+  .sheet {
+    background: var(--bg);
+    transform: translateY(0);
+    transition: transform .38s cubic-bezier(.22, 1, .36, 1), visibility 0s linear 0s;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .sheet.closed { transform: translateY(100%); visibility: hidden; transition: transform .38s cubic-bezier(.22, 1, .36, 1), visibility 0s linear .38s; }
+  .sheet-inner { max-width: 720px; margin: 0 auto; padding: 28px 4px 24px; display: flex; flex-direction: column; min-height: 100%; }
+  .sheet h1 { margin: 0; font: 800 28px/1.15 var(--font-display); }
+  .sheet .sub { margin: 4px 0 24px; color: var(--fg-mute); }
+  .tiles { display: flex; flex-direction: column; gap: 14px; flex: 1; }
+  .tile {
+    height: 104px; border-radius: 20px; padding: 0 22px; text-align: left;
+    display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(to right, var(--tc), color-mix(in srgb, var(--tc) 50%, transparent));
+    border: 2px solid transparent;
+  }
+  .tile.sel { border-color: #fff; }
+  .tile:active { transform: scale(.985); }
+  .tile .t { flex: 1; min-width: 0; }
+  .tile .n { font: 800 24px/1.2 var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .f { font-size: 16px; color: var(--fg-dim); margin-top: 2px; }
+  .tile svg { width: 38px; height: 38px; flex: none; }
+  .back { align-self: center; margin-top: 16px; padding: 12px 20px; color: #7cc4ff; font-weight: 500; }
+
+  .toast {
+    position: fixed; z-index: 5; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+    transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+    background: #2a2a2a; color: #fff; padding: 12px 18px; border-radius: 12px; font-size: 14px;
+    max-width: calc(100vw - 32px); transition: opacity .25s, transform .25s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* Landscape: card left, controls right */
+  @media (orientation: landscape) and (max-height: 520px) {
+    .stage { flex-direction: row; }
+    .art-zone { flex: 1; }
+    .controls { flex: 1; justify-content: center; padding: 0 0 16px; gap: 16px; }
+    .card { --s: min(78cqw, 90cqh); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card.in-next, .card.in-prev { animation: none; }
+    .sheet, .sheet.closed, .dot, .backdrop { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="backdrop" id="backdrop"></div>
+
+<main class="player" id="player" aria-hidden="true">
+  <div class="topbar">
+    <div class="spacer"></div>
+    <div class="title">LIVE RADIO</div>
+    <button class="icon-btn" id="open-list" aria-label="Stations">
+      <svg viewBox="0 0 24 24" width="24" height="24"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>
+    </button>
+  </div>
+  <div class="stage">
+    <div class="art-zone" id="art-zone"><div class="card" id="card"></div></div>
+    <div class="controls">
+      <div class="dots" id="dots"></div>
+      <div class="volume" id="volume" hidden>
+        <svg viewBox="0 0 24 24"><path d="M18.5 12A4.5 4.5 0 0 0 16 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
+        <input type="range" id="vol" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </div>
+      <div class="transport">
+        <button class="icon-btn skip" id="prev" aria-label="Previous station">
+          <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button class="play" id="play" aria-label="Play"></button>
+        <button class="icon-btn skip" id="next" aria-label="Next station">
+          <svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+      </div>
+      <div class="ios-hint" id="ios-hint" hidden>Use your iPhone volume buttons to adjust the sound.</div>
+    </div>
+  </div>
+</main>
+
+<section class="sheet" id="sheet" aria-label="Select station">
+  <div class="sheet-inner">
+    <h1>Select Station</h1>
+    <p class="sub">Choose a radio station to start listening</p>
+    <div class="tiles" id="tiles"></div>
+    <button class="back" id="close-list">Back to player</button>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<audio id="audio" playsinline webkit-playsinline preload="none"></audio>
+
+<script>
+(function () {
+  "use strict";
+
+  // Same stations as lib/stations.dart in the RADYOmo repo.
+  var STATIONS = [
+    { name: "Monster Radio", freq: "RX 93.1", url: "https://in-icecast.eradioportal.com:8443/monsterrrx", color: "#E53935" },
+    { name: "Win Radio",     freq: "91.5",    url: "https://stream.zeno.fm/2ss1hgnu6hhvv",               color: "#1E88E5" },
+    { name: "Magic",         freq: "89.9",    url: "https://stream-161.zeno.fm/sh37pvfd938uv",           color: "#FB8C00" }
+  ];
+
+  var ICON_RADIO = '<svg viewBox="0 0 24 24"><path d="M3.24 6.15C2.51 6.43 2 7.17 2 8v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8c0-1.11-.89-2-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-8h-2v-2h-2v2H4V8h16v4z"/></svg>';
+  var ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  var ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+  var ICON_PLAYCIRCLE = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var audio = $("audio"), card = $("card"), dotsEl = $("dots"), tilesEl = $("tiles");
+  var playBtn = $("play"), sheet = $("sheet"), player = $("player"), toastEl = $("toast");
+
+  var index = 0, dir = 1, busy = false, listOpen = true, toastTimer = 0, loadedIndex = -1;
+
+  try {
+    var saved = parseInt(localStorage.getItem("radyomo.station"), 10);
+    if (saved >= 0 && saved < STATIONS.length) index = saved;
+  } catch (e) {}
+
+  // ---------- artwork for lock screen / home screen icon ----------
+  function makeArt(color, size, label) {
+    var c = document.createElement("canvas");
+    c.width = c.height = size;
+    var g = c.getContext("2d");
+    var grad = g.createLinearGradient(0, 0, size, size);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, "#121212");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, size, size);
+    g.fillStyle = "rgba(255,255,255,.92)";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = "800 " + Math.round(size * (label.length > 3 ? .15 : .3)) + "px -apple-system, Helvetica, Arial, sans-serif";
+    g.fillText(label, size / 2, size / 2);
+    return c.toDataURL("image/png");
+  }
+  try { $("touch-icon").href = makeArt("#1DB954", 180, "R"); } catch (e) {}
+  var artCache = {};
+  function artFor(i) {
+    if (!artCache[i]) {
+      try { artCache[i] = makeArt(STATIONS[i].color, 512, STATIONS[i].freq); } catch (e) { artCache[i] = ""; }
+    }
+    return artCache[i];
+  }
+
+  // ---------- rendering ----------
+  function renderCard(animate) {
+    var s = STATIONS[index];
+    document.documentElement.style.setProperty("--c", s.color);
+    card.innerHTML = ICON_RADIO + '<div class="name"></div><div class="freq"></div>';
+    card.querySelector(".name").textContent = s.name;
+    card.querySelector(".freq").textContent = s.freq;
+    card.className = "card";
+    if (animate) {
+      void card.offsetWidth;
+      card.className = "card " + (dir > 0 ? "in-next" : "in-prev");
+    }
+    dotsEl.innerHTML = STATIONS.map(function (_, i) {
+      return '<span class="dot' + (i === index ? " on" : "") + '"></span>';
+    }).join("");
+    Array.prototype.forEach.call(tilesEl.children, function (t, i) {
+      t.classList.toggle("sel", i === index);
+    });
+  }
+
+  function renderPlay() {
+    playBtn.innerHTML = busy ? '<div class="spinner"></div>' : (audio.paused ? ICON_PLAY : ICON_PAUSE);
+    playBtn.setAttribute("aria-label", audio.paused ? "Play" : "Pause");
+  }
+
+  function buildTiles() {
+    tilesEl.innerHTML = "";
+    STATIONS.forEach(function (s, i) {
+      var b = document.createElement("button");
+      b.className = "tile";
+      b.style.setProperty("--tc", s.color);
+      b.innerHTML = '<div class="t"><div class="n"></div><div class="f"></div></div>' + ICON_PLAYCIRCLE;
+      b.querySelector(".n").textContent = s.name;
+      b.querySelector(".f").textContent = s.freq;
+      b.addEventListener("click", function () { select(i, true); });
+      tilesEl.appendChild(b);
+    });
+  }
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 3200);
+  }
+
+  function setList(open) {
+    listOpen = open;
+    sheet.classList.toggle("closed", !open);
+    sheet.setAttribute("aria-hidden", String(!open));
+    player.setAttribute("aria-hidden", String(open));
+    if ("inert" in player) { player.inert = open; sheet.inert = !open; }
+  }
+
+  // ---------- media session (lock screen + control centre) ----------
+  function updateMediaSession() {
+    if (!("mediaSession" in navigator)) return;
+    var s = STATIONS[index];
+    try {
+      var art = artFor(index);
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: s.name, artist: s.freq, album: "Live Radio",
+        artwork: art ? [{ src: art, sizes: "512x512", type: "image/png" }] : []
+      });
+    } catch (e) {}
+  }
+  function bindMediaSession() {
+    if (!("mediaSession" in navigator)) return;
+    var set = function (a, fn) { try { navigator.mediaSession.setActionHandler(a, fn); } catch (e) {} };
+    set("play", function () { play(); });
+    set("pause", function () { audio.pause(); });
+    set("previoustrack", function () { step(-1); });
+    set("nexttrack", function () { step(1); });
+  }
+
+  // ---------- playback ----------
+  function load() {
+    var s = STATIONS[index];
+    audio.src = s.url;
+    loadedIndex = index;
+    audio.load();
+  }
+
+  function play() {
+    if (loadedIndex !== index) load();
+    busy = true; renderPlay();
+    var p = audio.play();
+    if (p && p.catch) p.catch(function (err) {
+      busy = false; renderPlay();
+      if (err && err.name === "NotAllowedError") return;
+      toast("Playback error. Check your connection.");
+    });
+  }
+
+  function toggle() {
+    if (audio.paused) play(); else audio.pause();
+  }
+
+  function select(i, closeList) {
+    if (i < 0 || i >= STATIONS.length) return;
+    if (i !== index) {
+      var n = STATIONS.length;
+      dir = ((i - index + n) % n <= n / 2) ? 1 : -1;
+      index = i;
+      try { localStorage.setItem("radyomo.station", String(i)); } catch (e) {}
+      renderCard(true);
+      updateMediaSession();
+      loadedIndex = -1;
+    }
+    if (closeList) setList(false);
+    play();
+  }
+
+  function step(delta) {
+    var n = STATIONS.length;
+    select((index + delta + n) % n, false);
+  }
+
+  audio.addEventListener("playing", function () { busy = false; renderPlay(); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing"; });
+  audio.addEventListener("pause",   function () { busy = false; renderPlay(); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; });
+  audio.addEventListener("waiting", function () { if (!audio.paused) { busy = true; renderPlay(); } });
+  audio.addEventListener("stalled", function () { if (!audio.paused) { busy = true; renderPlay(); } });
+  audio.addEventListener("error",   function () {
+    busy = false; renderPlay();
+    if (audio.src) toast("Playback error. Check your connection.");
+  });
+
+  // ---------- swipe between stations ----------
+  (function () {
+    var zone = $("art-zone"), x0 = 0, y0 = 0, tracking = false;
+    zone.addEventListener("touchstart", function (e) {
+      if (e.touches.length !== 1) return;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; tracking = true;
+    }, { passive: true });
+    zone.addEventListener("touchend", function (e) {
+      if (!tracking) return;
+      tracking = false;
+      var t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+    }, { passive: true });
+  })();
+
+  // ---------- volume (iOS Safari ignores audio.volume, so hide the slider there) ----------
+  (function () {
+    var canSet = false;
+    try { audio.volume = 0.5; canSet = Math.abs(audio.volume - 0.5) < 0.001; audio.volume = 1; } catch (e) {}
+    if (canSet) {
+      $("volume").hidden = false;
+      $("vol").addEventListener("input", function (e) { audio.volume = parseFloat(e.target.value); });
+    } else {
+      $("ios-hint").hidden = false;
+    }
+  })();
+
+  // ---------- wiring ----------
+  playBtn.addEventListener("click", toggle);
+  $("prev").addEventListener("click", function () { step(-1); });
+  $("next").addEventListener("click", function () { step(1); });
+  $("open-list").addEventListener("click", function () { setList(true); });
+  $("close-list").addEventListener("click", function () { setList(false); });
+
+  // iOS Safari: stop double-tap zoom and pinch on the player.
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); });
+
+  buildTiles();
+  renderCard(false);
+  renderPlay();
+  setList(true);
+  bindMediaSession();
+  updateMediaSession();
+})();
+</script>
+</body>
+</html>
