@@ -136,9 +136,11 @@
   .tile {
     height: 104px; border-radius: 20px; padding: 0 22px; text-align: left;
     display: flex; align-items: center; gap: 12px;
-    background: linear-gradient(to right, var(--tc), color-mix(in srgb, var(--tc) 50%, transparent));
+    background: linear-gradient(to right, #3d3d3f, #2a2a2c);
     border: 2px solid transparent;
   }
+  /* Only the station that is playing gets its colour. */
+  .tile.live { background: linear-gradient(to right, var(--tc), color-mix(in srgb, var(--tc) 50%, transparent)); }
   .tile.sel { border-color: #fff; }
   .tile:active { transform: scale(.985); }
   .tile .t { flex: 1; min-width: 0; }
@@ -289,14 +291,21 @@
     dotsEl.innerHTML = STATIONS.map(function (_, i) {
       return '<span class="dot' + (i === index ? " on" : "") + '"></span>';
     }).join("");
+    updateTiles();
+  }
+
+  function updateTiles() {
+    var playing = !!audio && !audio.paused;
     Array.prototype.forEach.call(tilesEl.children, function (t, i) {
       t.classList.toggle("sel", i === index);
+      t.classList.toggle("live", playing && i === index);
     });
   }
 
   function renderPlay() {
     playBtn.innerHTML = busy ? '<div class="spinner"></div>' : (audio.paused ? ICON_PLAY : ICON_PAUSE);
     playBtn.setAttribute("aria-label", audio.paused ? "Play" : "Pause");
+    updateTiles();
   }
 
   function buildTiles() {
