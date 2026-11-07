@@ -195,7 +195,7 @@
     <div class="art-zone" id="art-zone"><div class="card" id="card"></div></div>
     <div class="controls">
       <div class="dots" id="dots"></div>
-      <div class="volume" id="volume" hidden>
+      <div class="volume" id="volume">
         <svg viewBox="0 0 24 24"><path d="M18.5 12A4.5 4.5 0 0 0 16 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
         <input type="range" id="vol" min="0" max="1" step="0.01" value="1" aria-label="Volume">
         <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
@@ -209,7 +209,7 @@
           <svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
         </button>
       </div>
-      <div class="ios-hint" id="ios-hint" hidden>Use your iPhone volume buttons to adjust the sound.</div>
+      <div class="ios-hint" id="ios-hint" hidden>This station does not allow in-app volume. Use your device volume buttons.</div>
     </div>
   </div>
 </main>
@@ -224,7 +224,6 @@
 </section>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<audio id="audio" playsinline webkit-playsinline preload="none"></audio>
 
 <script>
 (function () {
@@ -243,10 +242,20 @@
   var ICON_PLAYCIRCLE = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>';
 
   var $ = function (id) { return document.getElementById(id); };
-  var audio = $("audio"), card = $("card"), dotsEl = $("dots"), tilesEl = $("tiles");
+  var card = $("card"), dotsEl = $("dots"), tilesEl = $("tiles"), volEl = $("vol");
   var playBtn = $("play"), sheet = $("sheet"), player = $("player"), toastEl = $("toast");
 
   var index = 0, dir = 1, busy = false, listOpen = true, toastTimer = 0, loadedIndex = -1;
+
+  // Volume model. Desktop Safari lets the page set audio.volume directly.
+  // iOS Safari keeps audio.volume read-only, so there the level is applied through a
+  // Web Audio gain node, which only works when the stream allows cross-origin audio.
+  var audio = null, canSetVol = false, vol = 1;
+  var gainMode = false, gainFailed = false, ctx = null, gainNode = null, analyser = null, silenceTimer = 0;
+  try {
+    var sv = parseFloat(localStorage.getItem("radyomo.volume"));
+    if (sv >= 0 && sv <= 1) vol = sv;
+  } catch (e) {}
 
   try {
     var saved = parseInt(localStorage.getItem("radyomo.station"), 10);
@@ -363,6 +372,8 @@
   }
 
   function play() {
+    // A saved level below 100% on iOS needs the gain node before the first sound.
+    if (!canSetVol && !gainMode && !gainFailed && vol < 0.99) enableGain();
     if (loadedIndex !== index) load();
     busy = true; renderPlay();
     var p = audio.play();
@@ -397,13 +408,109 @@
     select((index + delta + n) % n, false);
   }
 
-  audio.addEventListener("playing", function () { busy = false; renderPlay(); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing"; });
-  audio.addEventListener("pause",   function () { busy = false; renderPlay(); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; });
-  audio.addEventListener("waiting", function () { if (!audio.paused) { busy = true; renderPlay(); } });
-  audio.addEventListener("stalled", function () { if (!audio.paused) { busy = true; renderPlay(); } });
-  audio.addEventListener("error",   function () {
-    busy = false; renderPlay();
-    if (audio.src) toast("Playback error. Check your connection.");
+  // ---------- audio element lifecycle ----------
+  function bindAudio(a) {
+    var live = function (fn) { return function () { if (a === audio) fn(); }; };
+    a.addEventListener("playing", live(function () {
+      busy = false; renderPlay();
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+      if (gainMode) { clearTimeout(silenceTimer); silenceTimer = setTimeout(checkSilence, 2500); }
+    }));
+    a.addEventListener("pause", live(function () {
+      busy = false; renderPlay();
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+    }));
+    a.addEventListener("waiting", live(function () { if (!a.paused) { busy = true; renderPlay(); } }));
+    a.addEventListener("stalled", live(function () { if (!a.paused) { busy = true; renderPlay(); } }));
+    a.addEventListener("error", live(function () {
+      busy = false; renderPlay();
+      if (!a.getAttribute("src")) return;
+      if (gainMode) { fallbackFromGain(); return; }
+      toast("Playback error. Check your connection.");
+    }));
+    // Keeps the slider in step when the browser changes the element volume itself.
+    a.addEventListener("volumechange", live(function () {
+      if (canSetVol && !gainMode) { vol = a.volume; volEl.value = String(vol); }
+    }));
+  }
+
+  function createAudio(cors) {
+    var a = document.createElement("audio");
+    a.setAttribute("playsinline", "");
+    a.setAttribute("webkit-playsinline", "");
+    a.preload = "none";
+    if (cors) a.crossOrigin = "anonymous";
+    bindAudio(a);
+    document.body.appendChild(a);
+    return a;
+  }
+
+  function swapAudio(a) {
+    var old = audio;
+    audio = a;
+    loadedIndex = -1;
+    if (old) {
+      try { old.pause(); old.removeAttribute("src"); old.load(); } catch (e) {}
+      old.remove();
+    }
+  }
+
+  // ---------- volume ----------
+  function applyVolume() {
+    if (gainMode && gainNode) gainNode.gain.value = vol;
+    else if (canSetVol) audio.volume = vol;
+  }
+
+  function showNoVolume() {
+    $("volume").hidden = true;
+    $("ios-hint").hidden = false;
+  }
+
+  function enableGain() {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { gainFailed = true; showNoVolume(); return false; }
+    try {
+      ctx = ctx || new AC();
+      var a = createAudio(true);
+      var src = ctx.createMediaElementSource(a);
+      gainNode = ctx.createGain();
+      gainNode.gain.value = vol;
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(gainNode);
+      gainNode.connect(analyser);
+      analyser.connect(ctx.destination);
+      swapAudio(a);
+      gainMode = true;
+      if (ctx.state === "suspended") ctx.resume();
+      return true;
+    } catch (e) {
+      fallbackFromGain();
+      return false;
+    }
+  }
+
+  // The stream refused cross-origin audio or came out silent: go back to a plain element.
+  function fallbackFromGain() {
+    clearTimeout(silenceTimer);
+    gainMode = false;
+    gainFailed = true;
+    swapAudio(createAudio(false));
+    showNoVolume();
+    toast("This station does not allow in-app volume.");
+    play();
+  }
+
+  function checkSilence() {
+    if (!gainMode || !audio || audio.paused || vol < 0.05 || !analyser) return;
+    var buf = new Uint8Array(analyser.fftSize), quiet = true;
+    analyser.getByteTimeDomainData(buf);
+    for (var i = 0; i < buf.length; i++) if (buf[i] !== 128) { quiet = false; break; }
+    if (quiet) fallbackFromGain();
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (ctx && ctx.state === "suspended" && audio && !audio.paused) ctx.resume();
   });
 
   // ---------- swipe between stations ----------
@@ -422,16 +529,20 @@
   })();
 
   // ---------- volume (iOS Safari ignores audio.volume, so hide the slider there) ----------
-  (function () {
-    var canSet = false;
-    try { audio.volume = 0.5; canSet = Math.abs(audio.volume - 0.5) < 0.001; audio.volume = 1; } catch (e) {}
-    if (canSet) {
-      $("volume").hidden = false;
-      $("vol").addEventListener("input", function (e) { audio.volume = parseFloat(e.target.value); });
-    } else {
-      $("ios-hint").hidden = false;
+  audio = createAudio(false);
+  try { audio.volume = 0.5; canSetVol = Math.abs(audio.volume - 0.5) < 0.001; } catch (e) {}
+  volEl.value = String(vol);
+  if (canSetVol) audio.volume = vol;
+
+  volEl.addEventListener("input", function (e) {
+    vol = parseFloat(e.target.value);
+    try { localStorage.setItem("radyomo.volume", String(vol)); } catch (err) {}
+    if (!canSetVol && !gainMode && !gainFailed) {
+      var wasPlaying = !audio.paused;
+      if (enableGain() && wasPlaying) play();
     }
-  })();
+    applyVolume();
+  });
 
   // ---------- wiring ----------
   playBtn.addEventListener("click", toggle);
