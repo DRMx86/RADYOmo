@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -26,6 +27,22 @@ Future<void> main() async {
   } catch (_) {
     // App still opens even if background service fails to start.
   }
+
+  // Audio focus: when another app (YouTube, Spotify, ...) starts playing,
+  // pause instead of mixing or ducking. Pauses caused by focus loss are not
+  // triggered by browsing or the home screen, so background play continues.
+  try {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration(
+      androidAudioAttributes: AndroidAudioAttributes(
+        contentType: AndroidAudioContentType.music,
+        usage: AndroidAudioUsage.media,
+      ),
+      androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+      androidWillPauseWhenDucked: true,
+    ));
+  } catch (_) {}
+
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
   runApp(const RadioApp());
 

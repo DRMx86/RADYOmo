@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:volume_controller/volume_controller.dart';
 
+import 'platform.dart' as platform;
 import 'stations.dart';
 import 'widgets.dart';
 
@@ -29,6 +30,8 @@ class _PlayerPageState extends State<PlayerPage> {
 
   StreamSubscription<int?>? _indexSub;
   StreamSubscription<PlaybackEvent>? _eventSub;
+  StreamSubscription<bool>? _playingSub;
+  bool _isTv = false;
 
   int _index = 0;
   int _dir = 1;
@@ -58,6 +61,16 @@ class _PlayerPageState extends State<PlayerPage> {
           _snack('Playback error. Check your connection.'),
     );
 
+    // TV only: keep the screen awake while actually playing, so the TV's
+    // idle/screensaver timers don't kick in during use. Phones are untouched.
+    platform.isTv().then((tv) {
+      _isTv = tv;
+      if (tv) platform.keepScreenOn(_player.playing);
+    });
+    _playingSub = _player.playingStream.listen((playing) {
+      if (_isTv) platform.keepScreenOn(playing);
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _tileFocus[_index].requestFocus();
     });
@@ -67,6 +80,7 @@ class _PlayerPageState extends State<PlayerPage> {
   void dispose() {
     _indexSub?.cancel();
     _eventSub?.cancel();
+    _playingSub?.cancel();
     VolumeController.instance.removeListener();
     _player.dispose();
     _volume.dispose();
