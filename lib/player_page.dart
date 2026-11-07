@@ -18,7 +18,7 @@ class PlayerPage extends StatefulWidget {
   State<PlayerPage> createState() => _PlayerPageState();
 }
 
-class _PlayerPageState extends State<PlayerPage> {
+class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   late final AudioPlayer _player;
   final _volume = ValueNotifier<double>(1.0);
 
@@ -65,8 +65,15 @@ class _PlayerPageState extends State<PlayerPage> {
     // idle/screensaver timers don't kick in during use. Phones are untouched.
     platform.isTv().then((tv) {
       _isTv = tv;
-      if (tv) platform.keepScreenOn(_player.playing);
+      if (tv) {
+        platform.keepScreenOn(_player.playing);
+        // Always draw the remote-control focus highlight on TV.
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.alwaysTraditional;
+      }
     });
+    WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_guardFocus);
     _playingSub = _player.playingStream.listen((playing) {
       if (_isTv) platform.keepScreenOn(playing);
     });
@@ -78,6 +85,8 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    HardwareKeyboard.instance.removeHandler(_guardFocus);
     _indexSub?.cancel();
     _eventSub?.cancel();
     _playingSub?.cancel();
@@ -159,6 +168,50 @@ class _PlayerPageState extends State<PlayerPage> {
   void _step(int delta) {
     final n = stations.length;
     _select((_index + delta + n) % n);
+  }
+
+  // ----------------------------------------------------------- focus
+
+  /// The control that should hold focus for the layer currently shown.
+  FocusNode get _defaultFocus => _showList ? _tileFocus[_index] : _playFocus;
+
+  /// True when focus sits on a real, attached control (not on nothing / a scope).
+  bool get _hasFocusedControl {
+    final f = FocusManager.instance.primaryFocus;
+    return f != null &&
+        f is! FocusScopeNode &&
+        f.context != null &&
+        f.canRequestFocus;
+  }
+
+  void _restoreFocus() {
+    if (!mounted || _hasFocusedControl) return;
+    _defaultFocus.requestFocus();
+  }
+
+  /// If focus got lost (long idle, screensaver, screen off/on...), the next
+  /// remote key press puts it back on a button instead of doing nothing.
+  bool _guardFocus(KeyEvent e) {
+    if (e is! KeyDownEvent || _hasFocusedControl) return false;
+    const keys = {
+      LogicalKeyboardKey.arrowUp,
+      LogicalKeyboardKey.arrowDown,
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.select,
+      LogicalKeyboardKey.enter,
+      LogicalKeyboardKey.gameButtonA,
+    };
+    if (!keys.contains(e.logicalKey)) return false;
+    _restoreFocus();
+    return true; // this press only brings the highlight back
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _restoreFocus());
+    }
   }
 
   // ------------------------------------------------------------------ ui

@@ -312,7 +312,10 @@ class _StationTileState extends State<_StationTile> {
             gradient: LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
-              colors: [s.color, s.color.withAlpha(128)],
+              // Neutral black/gray; colour is reserved for the player screen.
+              colors: widget.selected
+                  ? const [Color(0xFF4A4A4A), Color(0xFF242424)]
+                  : const [Color(0xFF353535), Color(0xFF1A1A1A)],
             ),
             border: _focused
                 ? Border.all(color: Colors.white, width: 4)
