@@ -6,6 +6,16 @@ import 'stations.dart';
 const _green = Color(0xFF1DB954);
 const _bg = Color(0xFF121212);
 
+/// Visible white ring on an icon button while the TV remote has focus on it.
+final remoteFocusStyle = ButtonStyle(
+  shape: const WidgetStatePropertyAll(CircleBorder()),
+  side: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.focused)
+        ? const BorderSide(color: Colors.white, width: 3)
+        : null,
+  ),
+);
+
 /// Full-screen tinted gradient that follows the current station colour.
 class GradientBackdrop extends StatelessWidget {
   const GradientBackdrop({super.key, required this.color});
@@ -134,8 +144,12 @@ class VolumeBar extends StatelessWidget {
               ),
               child: ValueListenableBuilder<double>(
                 valueListenable: volume,
-                builder: (_, v, __) =>
-                    Slider(value: v.clamp(0.0, 1.0).toDouble(), onChanged: onChanged),
+                // Not a remote focus target: it would trap left/right and swallow
+                // focus. TV volume is controlled with the remote's volume keys.
+                builder: (_, v, __) => ExcludeFocus(
+                  child: Slider(
+                      value: v.clamp(0.0, 1.0).toDouble(), onChanged: onChanged),
+                ),
               ),
             ),
           ),

@@ -320,6 +320,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 children: [
                   IconButton(
                     iconSize: 42,
+                    style: remoteFocusStyle,
                     tooltip: 'Previous',
                     icon: const Icon(Icons.skip_previous_rounded),
                     onPressed: () => _step(-1),
@@ -333,6 +334,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   const SizedBox(width: 16),
                   IconButton(
                     iconSize: 42,
+                    style: remoteFocusStyle,
                     tooltip: 'Next',
                     icon: const Icon(Icons.skip_next_rounded),
                     onPressed: () => _step(1),
@@ -355,7 +357,12 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _openList(true);
       },
+      // Only receives key events bubbling up from the buttons. It must never
+      // take focus itself, or the remote could land on this invisible
+      // full-screen node and the highlight would seem to vanish.
       child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
         onKeyEvent: _onKey,
         child: Scaffold(
           body: Stack(
@@ -385,6 +392,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                             ),
                             IconButton(
                               tooltip: 'Stations',
+                              style: remoteFocusStyle,
                               icon: const Icon(Icons.queue_music_rounded),
                               onPressed: () => _openList(true),
                             ),
