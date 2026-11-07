@@ -210,6 +210,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       WidgetsBinding.instance.addPostFrameCallback((_) => _restoreFocus());
     }
   }
@@ -311,8 +312,13 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 volume: _volume,
                 onChanged: (v) {
                   _volume.value = v;
+                  // In-app slider must not pop up Android's volume panel.
+                  VolumeController.instance.showSystemUI = false;
                   VolumeController.instance.setVolume(v);
                 },
+                // Physical volume buttons still show the system panel.
+                onChangeEnd: (_) =>
+                    VolumeController.instance.showSystemUI = true,
               ),
               const SizedBox(height: 24),
               Row(

@@ -121,9 +121,15 @@ class StationDots extends StatelessWidget {
 
 /// Volume slider; only this widget rebuilds when the volume changes.
 class VolumeBar extends StatelessWidget {
-  const VolumeBar({super.key, required this.volume, required this.onChanged});
+  const VolumeBar({
+    super.key,
+    required this.volume,
+    required this.onChanged,
+    this.onChangeEnd,
+  });
   final ValueNotifier<double> volume;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +154,9 @@ class VolumeBar extends StatelessWidget {
                 // focus. TV volume is controlled with the remote's volume keys.
                 builder: (_, v, __) => ExcludeFocus(
                   child: Slider(
-                      value: v.clamp(0.0, 1.0).toDouble(), onChanged: onChanged),
+                      value: v.clamp(0.0, 1.0).toDouble(),
+                      onChanged: onChanged,
+                      onChangeEnd: onChangeEnd),
                 ),
               ),
             ),

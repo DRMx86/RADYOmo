@@ -44,6 +44,8 @@ Future<void> main() async {
   } catch (_) {}
 
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
+  // Fullscreen: hide status + navigation bars (swipe from the edge to peek).
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const RadioApp());
 
   // After the first frame, so it can never delay or block startup (TV boxes).
