@@ -209,10 +209,11 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  /// Square album-art style card, centred in the left half of the screen.
-  Widget _buildArt(Station st) {
+  /// Square album-art style card, centred in the space it is given
+  /// (left half in landscape / TV, top area in portrait).
+  Widget _buildArt(Station st, {double fraction = 0.86}) {
     return LayoutBuilder(builder: (context, c) {
-      final side = math.min(c.maxWidth, c.maxHeight) * 0.86;
+      final side = math.min(c.maxWidth, c.maxHeight) * fraction;
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onHorizontalDragEnd: _onSwipe,
@@ -324,11 +325,25 @@ class _PlayerPageState extends State<PlayerPage> {
                         ),
                       ),
                       Expanded(
-                        child: Row(
-                          children: [
-                            Expanded(child: _buildArt(st)),
-                            Expanded(child: _buildControls()),
-                          ],
+                        child: LayoutBuilder(
+                          builder: (context, box) => box.maxWidth > box.maxHeight
+                              // Landscape / Android TV: art left, controls right.
+                              ? Row(
+                                  children: [
+                                    Expanded(child: _buildArt(st)),
+                                    Expanded(child: _buildControls()),
+                                  ],
+                                )
+                              // Portrait phone: art on top, controls below.
+                              : Column(
+                                  children: [
+                                    Expanded(
+                                        child: _buildArt(st, fraction: 0.78)),
+                                    const SizedBox(height: 16),
+                                    _buildControls(),
+                                    const SizedBox(height: 32),
+                                  ],
+                                ),
                         ),
                       ),
                     ],
